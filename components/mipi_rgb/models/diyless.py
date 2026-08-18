@@ -9,6 +9,10 @@ st7701s.extend(
     width=480,
     height=480,
     invert_colors=True,
+    # This board wires the same 16 data lines (5 red, 6 green, 5 blue) as the
+    # MAKERFABS-4 model below, which needs 18-bit pixel mode for that exact
+    # wiring to map correctly; 16-bit mode shows as a green tint/glow.
+    pixel_mode="18bit",
     cs_pin=1,
     reset_pin=43,
     de_pin={"number": 45, "ignore_strapping_warning": True},

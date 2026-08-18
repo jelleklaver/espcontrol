@@ -20,6 +20,9 @@ substitutions:
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 8MB
+  # Two full-size OTA app slots do not fit an 8MB chip at this firmware's
+  # compiled size (see partitions_8mb_single_app.csv); updates are USB-only.
+  partitions: ../../common/device/partitions_8mb_single_app.csv
   framework:
     type: esp-idf
     sdkconfig_options:
@@ -39,10 +42,6 @@ esp32:
       CONFIG_LCD_RGB_ISR_IRAM_SAFE: "y"
       CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
       CONFIG_SPIRAM_RODATA: "y"
-  # This board's flash chip only boots reliably in DIO mode; the default QIO
-  # mode leaves it stuck in a bootloader crash loop (per the vendor config).
-  platformio_options:
-    board_build.flash_mode: dio
 
 # ---------------------------------------------------------------------------
 # External component
@@ -63,14 +62,22 @@ espcontrol:
 # ---------------------------------------------------------------------------
 # ESP32-S3 with octal PSRAM and MIPI RGB display fails to reinitialize
 # peripherals after a software reset. A brief deep sleep forces a full
-# hardware reset on wake, equivalent to a power cycle. The on_boot
-# handler catches USB-triggered and software-triggered resets (the
-# latter fired by the "Apply Configuration" restart button); the OTA
-# on_end hook catches wireless updates.
+# hardware reset on wake, equivalent to a power cycle. The on_boot handler
+# catches USB-triggered and software-triggered resets, the latter fired by
+# the "Apply Configuration" restart button.
 # ---------------------------------------------------------------------------
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
+  # This board's flash chip only boots reliably in DIO mode; the default QIO
+  # mode leaves it stuck in a bootloader crash loop (per the vendor config).
+  platformio_options:
+    board_build.flash_mode: dio
+  # There is no ota: component on this board (see esp32.partitions above), so
+  # esp_ota_ops.h is no longer pulled in automatically; the reset-workaround
+  # lambda below still calls into it directly to detect a pending-verify boot.
+  includes:
+    - <esp_ota_ops.h>
   build_flags:
     - "-DESPCONTROL_DISABLE_TODO=1"
     - "-DESPCONTROL_MAX_GRID_SLOTS=9"
@@ -117,43 +124,11 @@ psram:
   speed: 80MHz
 
 # ---------------------------------------------------------------------------
-# OTA updates (ESPHome native + HTTP-based)
+# No ota: component - two full-size OTA app slots do not fit this board's
+# 8MB flash at this firmware's compiled size (see esp32.partitions above).
+# Firmware updates are USB-only; packages.yaml uses firmware_update_disabled
+# so the "Check for Update" UI isn't offered for a mechanism that isn't there.
 # ---------------------------------------------------------------------------
-ota:
-  - platform: esphome
-    on_begin:
-      then:
-        - script.execute: show_update_writing
-        - script.wait: show_update_writing
-    on_end:
-      then:
-        - globals.set:
-            id: firmware_update_complete_pending
-            value: 'true'
-        - lambda: 'global_preferences->sync();'
-        - lambda: |-
-            esp_sleep_enable_timer_wakeup(100000);
-            esp_deep_sleep_start();
-    on_error:
-      then:
-        - script.execute: show_update_failed
-  - platform: http_request
-    on_begin:
-      then:
-        - script.execute: show_update_writing
-        - script.wait: show_update_writing
-    on_end:
-      then:
-        - globals.set:
-            id: firmware_update_complete_pending
-            value: 'true'
-        - lambda: 'global_preferences->sync();'
-        - lambda: |-
-            esp_sleep_enable_timer_wakeup(100000);
-            esp_deep_sleep_start();
-    on_error:
-      then:
-        - script.execute: show_update_failed
 
 safe_mode:
   id: diyless_t3_safe_mode

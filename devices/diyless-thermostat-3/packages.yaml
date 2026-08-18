@@ -119,7 +119,7 @@ packages:
   bl_schedule:     !include ../../common/addon/backlight_schedule.yaml
   network:         !include ../../common/addon/network.yaml
   memory_diag:     !include ../../common/addon/memory_diagnostics.yaml
-  fw_update:       !include ../../common/addon/firmware_update.yaml
+  fw_update:       !include ../../common/addon/firmware_update_disabled.yaml
 
   # ---------------------------------------------------------------------------
   # Screens (loading must be first page for LVGL startup)

@@ -1,0 +1,9 @@
+# Name,       Type, SubType, Offset,    Size,      Flags
+#
+# Single-partition (no OTA) layout for 8 MB EspControl panels. Two full-size
+# OTA app slots do not fit an 8 MB chip at this firmware's compiled size, so
+# this board takes the whole app budget as one factory partition and updates
+# over USB instead of wirelessly.
+nvs,           data, nvs,     0x9000,    0xd000,
+phy_init,      data, phy,     0x16000,   0x1000,
+factory,       app,  factory, 0x20000,   0x7d0000,
