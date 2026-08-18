@@ -1,0 +1,168 @@
+# =============================================================================
+# OPENTHERM - Boiler control entities (central heating + hot water)
+# =============================================================================
+# Entities from the board's stock DIYLESS thermostat config, adapted to plain
+# HA entities instead of custom LVGL pages: espcontrol's own grid exposes them
+# via its Climate/Switch/Sensor card types, configured from the web UI like
+# any other Home Assistant entity. The PID loop's current temperature comes
+# from the board's built-in AHT20 sensor.
+# =============================================================================
+
+sensor:
+  - platform: aht10
+    variant: AHT20
+    temperature:
+      name: "Built In Sensor Temperature"
+      id: builtin_sensor
+    humidity:
+      name: "Built In Sensor Humidity"
+    update_interval: 60s
+
+  - platform: opentherm
+    t_boiler:
+      id: ch_temperature
+      name: "Heating Temperature"
+    t_dhw:
+      id: dhw_temperature
+      name: "Hot Water Temperature"
+    t_dhw2:
+      name: "Hot Water Temperature 2"
+    rel_mod_level:
+      id: rel_mod_level
+      name: "Boiler Relative Modulation Level"
+    t_outside:
+      name: "Outside Temperature"
+    t_ret:
+      name: "Return Water Temperature"
+    max_t_set:
+      name: "Max CH Setpoint"
+    max_t_set_ub:
+      name: "Upper Bound of CH Setpoint"
+    max_t_set_lb:
+      name: "Lower Bound CH Setpoint"
+    t_exhaust:
+      name: "Boiler Exhaust Temperature"
+      entity_category: diagnostic
+    ch_pressure:
+      name: "Water Pressure"
+      entity_category: diagnostic
+    oem_fault_code:
+      name: "OEM Fault Code"
+      entity_category: diagnostic
+    oem_diagnostic_code:
+      name: "OEM Diagnostic Code"
+      entity_category: diagnostic
+
+output:
+  - platform: opentherm
+    t_set:
+      id: ch_setpoint
+      min_value: 30
+      max_value: 80
+      zero_means_zero: true
+
+switch:
+  - platform: opentherm
+    ch_enable:
+      id: ch_enable
+      name: "Heating"
+      restore_mode: RESTORE_DEFAULT_OFF
+      internal: false
+      on_turn_on:
+        - climate.control:
+            id: ch_climate
+            mode: 'HEAT'
+      on_turn_off:
+        - climate.control:
+            id: ch_climate
+            mode: 'OFF'
+    dhw_enable:
+      id: dhw_enable
+      name: "Hot Water"
+      restore_mode: RESTORE_DEFAULT_OFF
+
+binary_sensor:
+  - platform: opentherm
+    ch_active:
+      id: ch_active
+      name: "Heating Active"
+    dhw_active:
+      id: dhw_active
+      name: "Hot Water Active"
+    flame_on:
+      id: flame_on
+      name: "Flame On"
+    fault_indication:
+      id: fault_indication
+      name: "Boiler Fault"
+      entity_category: diagnostic
+    diagnostic_indication:
+      id: diagnostic_indication
+      name: "Boiler Diagnostic"
+      entity_category: diagnostic
+    service_request:
+      name: Service Required
+      entity_category: diagnostic
+    lockout_reset:
+      name: Lockout Reset
+      entity_category: diagnostic
+    low_water_pressure:
+      name: Low Water Pressure Fault
+      entity_category: diagnostic
+    flame_fault:
+      name: Flame Fault
+      entity_category: diagnostic
+    air_pressure_fault:
+      name: Air Pressure Fault
+      entity_category: diagnostic
+    water_over_temp:
+      name: Water Overtemperature
+      entity_category: diagnostic
+
+number:
+  - platform: opentherm
+    t_dhw_set:
+      id: dhw_setpoint
+      name: "Hot Water Setpoint"
+      step: 1
+      min_value: 30
+      max_value: 80
+      restore_value: true
+      initial_value: 60
+
+climate:
+  - platform: pid
+    id: ch_climate
+    name: "Heating Climate"
+    heat_output: ch_setpoint
+    default_target_temperature: 23
+    sensor: builtin_sensor
+    visual:
+      min_temperature: 15
+      max_temperature: 30
+      temperature_step:
+        target_temperature: 0.5
+        current_temperature: 0.1
+    control_parameters:
+      kp: 0.77
+      ki: 0.0005
+      kd: 0
+      output_averaging_samples: 10
+    deadband_parameters:
+      threshold_high: 0.5
+      threshold_low: -0.5
+      kp_multiplier: 0
+      ki_multiplier: 0.15
+      kd_multiplier: 0.0
+      deadband_output_averaging_samples: 15
+    on_state:
+      # Keep the CH-enable switch (and therefore the OpenTherm ch_enable
+      # register) in sync with whatever set the climate mode, whether that
+      # was the switch itself, HA, or an automation.
+      - if:
+          condition:
+            - lambda: 'return id(ch_climate).mode == CLIMATE_MODE_OFF;'
+          then:
+            - switch.turn_off: ch_enable
+          else:
+            - switch.turn_on: ch_enable

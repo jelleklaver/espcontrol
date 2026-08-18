@@ -3,10 +3,9 @@
 # =============================================================================
 # Pin assignments, peripherals, and platform config for the 4" 480x480 wall
 # thermostat. Includes the ESP32-S3 SoC (native WiFi), MIPI RGB display
-# (ST7701S), FT6336 capacitive touchscreen, and backlight PWM. This board's
-# stock DIYLESS firmware also drives an OpenTherm boiler interface on
-# GPIO11/12/13/44; espcontrol has no opentherm component, so those pins are
-# only claimed here by the SPI bus (GPIO11/12) they double as.
+# (ST7701S), FT6336 capacitive touchscreen, backlight PWM, and the OpenTherm
+# boiler interface on GPIO11/12/13/44 (GPIO11/12 double as the SPI bus used
+# to init the display; see device/opentherm.yaml for the boiler entities).
 # =============================================================================
 
 substitutions:
@@ -44,7 +43,7 @@ esp32:
       CONFIG_SPIRAM_RODATA: "y"
 
 # ---------------------------------------------------------------------------
-# External component
+# External components
 # ---------------------------------------------------------------------------
 external_components:
   - source:
@@ -54,6 +53,9 @@ external_components:
       path: components
     components: [espcontrol, web_server_idf, artwork_image, mipi_rgb]
     refresh: 1s
+  # OpenTherm boiler protocol driver from the board's original manufacturer.
+  - source: github://diyless/esphome-opentherm-t3
+    refresh: 0s
 
 espcontrol:
   id: espcontrol_app
@@ -210,10 +212,29 @@ light:
 # ---------------------------------------------------------------------------
 # SPI bus (used by MIPI RGB driver for ST7701S init sequence)
 # ---------------------------------------------------------------------------
+# GPIO11/GPIO12 double as the OpenTherm out/in pins below. SPI only drives
+# these pins briefly during display init, so the two peacefully share them.
 spi:
   - id: lcd_spi
-    clk_pin: GPIO12
-    mosi_pin: GPIO11
+    clk_pin:
+      number: GPIO12
+      allow_other_uses: true
+    mosi_pin:
+      number: GPIO11
+      allow_other_uses: true
+
+# ---------------------------------------------------------------------------
+# OpenTherm boiler interface (see device/opentherm.yaml for the entities)
+# ---------------------------------------------------------------------------
+opentherm:
+  in_pin:
+    number: 12
+    allow_other_uses: true
+  out_pin:
+    number: 11
+    allow_other_uses: true
+  boot_pin: 44
+  reset_pin: 13
 
 # ---------------------------------------------------------------------------
 # I2C bus and touchscreen (FT6336 capacitive, wakes screensaver on touch)
