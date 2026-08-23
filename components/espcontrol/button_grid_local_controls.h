@@ -100,6 +100,17 @@ inline esphome::climate::Climate *find_local_climate(const std::string &object_i
   for (auto *c : esphome::App.get_climates()) {
     if (std::string(c->get_object_id_to(oid_buf).c_str()) == object_id) return c;
   }
+  // No match: the configured entity is almost always a YAML `id:` (the C++
+  // variable name) rather than the object_id ESPHome derives from the
+  // climate's `name:` - list what's actually available so that mismatch is
+  // obvious from the log instead of a silently blank card.
+  std::string available;
+  for (auto *c : esphome::App.get_climates()) {
+    if (!available.empty()) available += ", ";
+    available += c->get_object_id_to(oid_buf).c_str();
+  }
+  ESP_LOGW("climate", "Local climate '%s' not found (available: %s)",
+           object_id.c_str(), available.empty() ? "none" : available.c_str());
   return nullptr;
 }
 #endif
