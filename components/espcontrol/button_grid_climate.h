@@ -2838,6 +2838,13 @@ inline void climate_apply_local_state(ClimateControlCtx *ctx) {
   climate_normalize_range(ctx);
   float step = traits.get_visual_target_temperature_step();
   if (step > 0) ctx->step_tenths = climate_local_temp_tenths(step);
+  ESP_LOGD("climate", "Local '%s' state: mode=%s current=%.1f%s target=%.1f%s low=%.1f%s high=%.1f%s range=%d",
+           ctx->entity_id.c_str(), ctx->hvac_mode.c_str(),
+           c->current_temperature, ctx->has_current ? "" : " (nan)",
+           c->target_temperature, ctx->has_target ? "" : " (nan)",
+           c->target_temperature_low, ctx->has_low ? "" : " (nan)",
+           c->target_temperature_high, ctx->has_high ? "" : " (nan)",
+           (int) range);
 }
 #endif  // USE_CLIMATE
 
