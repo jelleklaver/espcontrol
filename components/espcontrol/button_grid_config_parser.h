@@ -640,7 +640,8 @@ inline std::string cover_card_options_normalized(const std::string &options,
 
 inline bool climate_control_tab_token_valid(const std::string &value) {
   return value == "temperature" || value == "mode" || value == "preset" ||
-         value == "fan" || value == "swing" || value == "horizontal_swing";
+         value == "fan" || value == "swing" || value == "horizontal_swing" ||
+         value == "info";
 }
 
 inline std::string normalize_climate_control_tabs_value(const std::string &value) {

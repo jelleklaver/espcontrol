@@ -162,16 +162,18 @@ enum class ClimateControlTab : uint8_t {
   FAN = 3,
   SWING = 4,
   HORIZONTAL_SWING = 5,
+  INFO = 6,
 };
 
 struct ClimateControlVisibleTabs {
-  ClimateControlTab tabs[6] = {
+  ClimateControlTab tabs[7] = {
     ClimateControlTab::TEMPERATURE,
     ClimateControlTab::MODE,
     ClimateControlTab::PRESET,
     ClimateControlTab::FAN,
     ClimateControlTab::SWING,
     ClimateControlTab::HORIZONTAL_SWING,
+    ClimateControlTab::INFO,
   };
   uint8_t count = 0;
 
@@ -183,7 +185,7 @@ struct ClimateControlVisibleTabs {
   }
 
   void add(ClimateControlTab tab) {
-    if (count >= 6 || contains(tab)) return;
+    if (count >= 7 || contains(tab)) return;
     tabs[count++] = tab;
   }
 };
@@ -201,12 +203,14 @@ struct ClimateControlModalUi {
   lv_obj_t *fan_tab = nullptr;
   lv_obj_t *swing_tab = nullptr;
   lv_obj_t *horizontal_swing_tab = nullptr;
+  lv_obj_t *info_tab = nullptr;
   lv_obj_t *mode_btn = nullptr;
   lv_obj_t *menu_view = nullptr;
   lv_obj_t *menu_close_btn = nullptr;
   lv_obj_t *menu_mode_btn = nullptr;
   lv_obj_t *menu_preset_btn = nullptr;
   lv_obj_t *option_list_view = nullptr;
+  lv_obj_t *info_view = nullptr;
   lv_obj_t *arc = nullptr;
   lv_obj_t *current_dot = nullptr;
   lv_obj_t *handle_dot = nullptr;
@@ -680,6 +684,10 @@ inline bool climate_control_tab_from_token(const std::string &value, ClimateCont
     tab = ClimateControlTab::HORIZONTAL_SWING;
     return true;
   }
+  if (value == "info") {
+    tab = ClimateControlTab::INFO;
+    return true;
+  }
   return false;
 }
 
@@ -698,6 +706,11 @@ inline bool climate_control_tab_supported(ClimateControlCtx *ctx, ClimateControl
       return !ctx->swing_modes.empty();
     case ClimateControlTab::HORIZONTAL_SWING:
       return !ctx->swing_horizontal_modes.empty();
+    case ClimateControlTab::INFO:
+      // Diagnostic readout of the underlying Climate component's live
+      // state; only meaningful (and only reachable) for local climates,
+      // since Home Assistant-bound cards never populate that state here.
+      return ctx->is_local;
   }
   return false;
 }
@@ -772,6 +785,7 @@ inline lv_obj_t *climate_control_tab_button(ClimateControlModalUi &ui, ClimateCo
     case ClimateControlTab::FAN: return ui.fan_tab;
     case ClimateControlTab::SWING: return ui.swing_tab;
     case ClimateControlTab::HORIZONTAL_SWING: return ui.horizontal_swing_tab;
+    case ClimateControlTab::INFO: return ui.info_tab;
   }
   return nullptr;
 }
@@ -1380,6 +1394,12 @@ inline void climate_hide_inline_option_list() {
   ui.option_list_view = nullptr;
 }
 
+inline void climate_hide_info_panel() {
+  ClimateControlModalUi &ui = climate_control_modal_ui();
+  if (ui.info_view) lv_obj_del(ui.info_view);
+  ui.info_view = nullptr;
+}
+
 inline void climate_update_chip(lv_obj_t *chip, const char *title, const std::string &value,
                                 bool visible, bool show_value = true) {
   if (!chip) return;
@@ -1900,8 +1920,76 @@ inline const char *climate_control_tab_kind(ClimateControlTab tab) {
     case ClimateControlTab::SWING: return "swing";
     case ClimateControlTab::HORIZONTAL_SWING: return "horizontal_swing";
     case ClimateControlTab::TEMPERATURE: return "";
+    case ClimateControlTab::INFO: return "";
   }
   return "";
+}
+
+inline void climate_info_panel_add_row(lv_obj_t *parent, const std::string &label,
+                                       const std::string &value, const lv_font_t *font) {
+  lv_obj_t *row = lv_label_create(parent);
+  std::string text = label + ": " + value;
+  lv_label_set_text(row, text.c_str());
+  lv_label_set_long_mode(row, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(row, lv_pct(100));
+  lv_obj_set_style_text_color(row, lv_color_hex(DARK_TEXT_PRIMARY), LV_PART_MAIN);
+  if (font) lv_obj_set_style_text_font(row, font, LV_PART_MAIN);
+}
+
+// A read-only dump of everything this card knows about the underlying local
+// Climate component - not meant to be pretty, just to make a blank or
+// wrong-looking card debuggable from the device itself instead of a serial
+// log. Rebuilt from scratch each time (see climate_control_apply_tab_visibility),
+// same as climate_open_inline_option_list, so it always reflects live state.
+inline void climate_open_info_panel(ClimateControlCtx *ctx) {
+  if (!ctx) return;
+  ClimateControlModalUi &ui = climate_control_modal_ui();
+  if (!ui.panel) return;
+  climate_hide_info_panel();
+
+  ui.info_view = lv_obj_create(ui.panel);
+  lv_obj_set_size(ui.info_view, lv_pct(100), lv_pct(100));
+  lv_obj_set_style_bg_opa(ui.info_view, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_border_width(ui.info_view, 0, LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(ui.info_view, 0, LV_PART_MAIN);
+  lv_obj_set_style_pad_top(ui.info_view, 58, LV_PART_MAIN);
+  lv_obj_set_style_pad_left(ui.info_view, 16, LV_PART_MAIN);
+  lv_obj_set_style_pad_right(ui.info_view, 16, LV_PART_MAIN);
+  lv_obj_set_style_pad_bottom(ui.info_view, 16, LV_PART_MAIN);
+  lv_obj_set_style_pad_row(ui.info_view, 6, LV_PART_MAIN);
+  lv_obj_set_layout(ui.info_view, LV_LAYOUT_FLEX);
+  lv_obj_set_style_flex_flow(ui.info_view, LV_FLEX_FLOW_COLUMN, LV_PART_MAIN);
+  lv_obj_add_flag(ui.info_view, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_scroll_dir(ui.info_view, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(ui.info_view, LV_SCROLLBAR_MODE_AUTO);
+
+  const lv_font_t *font = ctx->option_menu_font;
+  int precision = climate_target_display_precision(ctx);
+  auto row = [&](const char *label, const std::string &value) {
+    climate_info_panel_add_row(ui.info_view, label, value, font);
+  };
+  row("Entity", ctx->entity_id.empty() ? "--" : ctx->entity_id);
+  row("Available", ctx->available ? "yes" : "no");
+  row("Mode", ctx->hvac_mode.empty() ? "--" : ctx->hvac_mode);
+  row("Action", ctx->hvac_action.empty() ? "--" : ctx->hvac_action);
+  row("Current", ctx->has_current ? climate_format_tenths(ctx->current_tenths, precision) : "--");
+  if (climate_dual_target(ctx)) {
+    row("Target Low", ctx->has_low ? climate_format_tenths(ctx->low_tenths, precision) : "--");
+    row("Target High", ctx->has_high ? climate_format_tenths(ctx->high_tenths, precision) : "--");
+  } else {
+    row("Target", ctx->has_target ? climate_format_tenths(ctx->target_tenths, precision) : "--");
+  }
+  row("Min", climate_format_tenths(ctx->min_tenths, precision));
+  row("Max", climate_format_tenths(ctx->max_tenths, precision));
+  row("Step", climate_format_tenths(ctx->step_tenths, precision));
+  std::string modes;
+  for (const auto &mode : ctx->hvac_modes) {
+    if (!modes.empty()) modes += ", ";
+    modes += mode;
+  }
+  row("Modes", modes.empty() ? "--" : modes);
+
+  lv_obj_move_foreground(ui.info_view);
 }
 
 inline void climate_control_apply_tab_visibility() {
@@ -1917,6 +2005,7 @@ inline void climate_control_apply_tab_visibility() {
   bool show_fan = ui.tab == ClimateControlTab::FAN;
   bool show_swing = ui.tab == ClimateControlTab::SWING;
   bool show_horizontal_swing = ui.tab == ClimateControlTab::HORIZONTAL_SWING;
+  bool show_info = ui.tab == ClimateControlTab::INFO;
 
   climate_set_obj_visible(ui.tab_row, show_tab_bar);
   climate_set_obj_visible(ui.temperature_tab,
@@ -1931,6 +2020,8 @@ inline void climate_control_apply_tab_visibility() {
     show_tab_bar && visible_tabs.contains(ClimateControlTab::SWING));
   climate_set_obj_visible(ui.horizontal_swing_tab,
     show_tab_bar && visible_tabs.contains(ClimateControlTab::HORIZONTAL_SWING));
+  climate_set_obj_visible(ui.info_tab,
+    show_tab_bar && visible_tabs.contains(ClimateControlTab::INFO));
 
   climate_control_style_tab(ui.temperature_tab, show_temperature, ctx->accent_color);
   climate_control_style_tab(ui.mode_tab, show_mode, ctx->accent_color);
@@ -1938,11 +2029,17 @@ inline void climate_control_apply_tab_visibility() {
   climate_control_style_tab(ui.fan_tab, show_fan, ctx->accent_color);
   climate_control_style_tab(ui.swing_tab, show_swing, ctx->accent_color);
   climate_control_style_tab(ui.horizontal_swing_tab, show_horizontal_swing, ctx->accent_color);
+  climate_control_style_tab(ui.info_tab, show_info, ctx->accent_color);
 
   climate_set_dial_controls_visible(show_temperature);
   if (show_temperature) {
     climate_hide_inline_option_list();
+    climate_hide_info_panel();
+  } else if (show_info) {
+    climate_hide_inline_option_list();
+    climate_open_info_panel(ctx);
   } else {
+    climate_hide_info_panel();
     climate_open_inline_option_list(ctx, climate_control_tab_kind(ui.tab));
   }
 }
@@ -2312,8 +2409,19 @@ inline void climate_control_layout_modal(ClimateControlCtx *ctx) {
         }
       }
     }
+    if (ui.info_view) {
+      lv_coord_t info_top = show_tab_bar
+        ? layout.inset + tab_frame_h + climate_control_tab_content_gap(layout)
+        : layout.inset + layout.back_size + 8;
+      lv_obj_set_size(ui.info_view, layout.panel_w, layout.panel_h);
+      lv_obj_set_style_pad_top(ui.info_view, info_top, LV_PART_MAIN);
+      lv_obj_set_style_pad_left(ui.info_view, layout.inset, LV_PART_MAIN);
+      lv_obj_set_style_pad_right(ui.info_view, layout.inset, LV_PART_MAIN);
+      lv_obj_set_style_pad_bottom(ui.info_view, layout.inset, LV_PART_MAIN);
+    }
   }
   if (ui.option_list_view) lv_obj_move_foreground(ui.option_list_view);
+  if (ui.info_view) lv_obj_move_foreground(ui.info_view);
   if (ui.range_toggle) lv_obj_move_foreground(ui.range_toggle);
   if (ui.tab_row) lv_obj_move_foreground(ui.tab_row);
   lv_obj_move_foreground(ui.back_btn);
@@ -2405,6 +2513,9 @@ inline void climate_control_open_modal(ClimateControlCtx *ctx) {
   ui.horizontal_swing_tab = climate_control_create_tab_button(
     ui.tab_row, find_icon("Swap Horizontal"), ctx->icon_font,
     ClimateControlTab::HORIZONTAL_SWING);
+  ui.info_tab = climate_control_create_tab_button(
+    ui.tab_row, find_icon("Information Outline"), ctx->icon_font,
+    ClimateControlTab::INFO);
 
   ui.menu_view = lv_obj_create(ui.panel);
   lv_obj_set_style_bg_opa(ui.menu_view, LV_OPA_TRANSP, LV_PART_MAIN);

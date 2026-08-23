@@ -870,6 +870,11 @@
       "mdi": "water-percent-alert"
     },
     {
+      "name": "Information Outline",
+      "codepoint": "F02FD",
+      "mdi": "information-outline"
+    },
+    {
       "name": "Iron",
       "codepoint": "F1824",
       "mdi": "iron"

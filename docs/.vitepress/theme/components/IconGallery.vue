@@ -416,6 +416,7 @@ const ICON_GROUPS = {
   'Dots Horizontal': 'General',
   'Gesture Tap': 'General',
   'Home': 'General',
+  'Information Outline': 'General',
   'Mailbox': 'General',
   'Minus': 'General',
   'Package': 'General',
