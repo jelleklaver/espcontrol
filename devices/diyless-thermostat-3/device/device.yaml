@@ -130,7 +130,12 @@ psram:
 # 8MB flash at this firmware's compiled size (see esp32.partitions above).
 # Firmware updates are USB-only; packages.yaml uses firmware_update_disabled
 # so the "Check for Update" UI isn't offered for a mechanism that isn't there.
+# web_server: version 3 (set generically in core_infra.yaml) adds its own OTA
+# upload endpoint regardless of the ota: component above; disable it too, or
+# it would sit there and fail the same way for the same reason if ever used.
 # ---------------------------------------------------------------------------
+web_server:
+  ota: false
 
 safe_mode:
   id: diyless_t3_safe_mode

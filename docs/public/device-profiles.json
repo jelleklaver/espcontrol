@@ -216,6 +216,27 @@
       "rotation": true,
       "ethernetManualInstall": false,
       "subpages": true
+    },
+    {
+      "slug": "diyless-thermostat-3",
+      "installSlug": "diyless-thermostat-3",
+      "name": "DIYLESS Thermostat 3",
+      "docsPath": "/screens/diyless-thermostat-3",
+      "screenSize": "4 inches",
+      "resolution": "480 x 480",
+      "orientation": "Square",
+      "slots": 9,
+      "imageSlots": 0,
+      "imageCardTypes": [],
+      "grid": {
+        "rows": 3,
+        "cols": 3
+      },
+      "chipFamily": "ESP32-S3",
+      "relays": 0,
+      "rotation": true,
+      "ethernetManualInstall": false,
+      "subpages": true
     }
   ]
 }

@@ -1,0 +1,41 @@
+# =============================================================================
+# FACTORY BUILD - DIYLESS Thermostat 3 (4" square)
+# =============================================================================
+# Factory image: www.js bundled inline for first-boot web UI access.
+# =============================================================================
+
+substitutions:
+  cover_art_placeholder_file: "../common/assets/cover_art_placeholder.svg"
+  name: "espcontrol-diyless3"
+  friendly_name: "DIYLESS Thermostat 3"
+  firmware_version: "0.0.0"
+  espcontrol_component_url: "file:///config"
+  mdi_font_file: "/config/common/assets/fonts/materialdesignicons-webfont-7.4.47.ttf"
+  espcontrol_component_ref: "HEAD"
+
+esp32:
+  partitions: "../common/device/partitions_8mb_single_app.csv"
+
+packages:
+  core: !include ../devices/diyless-thermostat-3/packages.yaml
+
+esphome:
+  name_add_mac_suffix: true
+  project:
+    name: jtenniswood.espcontrol
+    version: "${firmware_version}"
+
+dashboard_import:
+  package_import_url: github://jtenniswood/espcontrol/devices/diyless-thermostat-3/esphome.yaml@main
+
+web_server:
+  port: 80
+  version: 3
+  js_url: https://jtenniswood.github.io/espcontrol/webserver/www.js?device=${device_slug}&v=${firmware_version}&ui=20260714-shared
+  js_include: "../docs/public/webserver/embedded/www.js"
+
+wifi:
+  ap:
+    ssid: "${friendly_name}"
+
+captive_portal:
