@@ -162,6 +162,7 @@ function registerCards(context: ApplicationContext) {
     context.controllers.clockBarState,
     context.controllers.renderQueue,
     fields,
+    cardUi,
   );
   registerClockCardTypes(registry, context.configuration.dateTimeOptions, fields);
   registerDoorWindowCardTypes(registry, context.configuration.options, fields);

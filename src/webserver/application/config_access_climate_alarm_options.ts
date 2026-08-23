@@ -38,6 +38,9 @@ export function createConfigAccessClimateAlarmOptionsFeature(
     function isClimateCardType(type?: any) {
         return type === "climate" || type === "climate_control";
     }
+    function climateCardIsLocal(this: any, b?: any) {
+        return !!b && b.sensor === "local";
+    }
     // ── Access, Climate, and Alarm Card Options ───────────────────────
     function alarmBehaviorSpec(this: any) {
         var card: any = cardContractCard("alarm");
@@ -408,6 +411,7 @@ export function createConfigAccessClimateAlarmOptionsFeature(
         normalizeClimateNumberDisplayMode,
         normalizeClimateTemperatureStep,
         normalizeClimateOptions,
+        climateCardIsLocal,
         climateLabelDisplayMode,
         setClimateLabelDisplayMode,
         climateNumberDisplayMode,

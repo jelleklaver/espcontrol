@@ -85,6 +85,25 @@ inline void send_local_action(const std::string &key) {
   ESP_LOGW("espcontrol", "Local action '%s' not registered", key.c_str());
 }
 
+// ── Local climate controls ────────────────────────────────────────────
+//
+// The Climate card can bind directly to any ESPHome climate component on
+// the device (object_id lookup, no Home Assistant involved). Unlike local
+// sensors/actions there is no registration step: any climate: platform
+// already registers itself with the ESPHome core, so this just searches
+// that existing list.
+
+#ifdef USE_CLIMATE
+inline esphome::climate::Climate *find_local_climate(const std::string &object_id) {
+  if (object_id.empty()) return nullptr;
+  char oid_buf[128];
+  for (auto *c : esphome::App.get_climates()) {
+    if (std::string(c->get_object_id_to(oid_buf).c_str()) == object_id) return c;
+  }
+  return nullptr;
+}
+#endif
+
 // ── Local sensor controls ─────────────────────────────────────────────
 //
 // Displays a live value from any ESPHome sensor/text_sensor on the device.
@@ -159,6 +178,55 @@ inline std::string local_endpoint_json_escape(const std::string &s) {
   }
   return out;
 }
+
+#ifdef USE_CLIMATE
+class LocalClimateHandler : public esphome::web_server_idf::AsyncWebHandler {
+ public:
+  static std::string build_json() {
+    std::string json;
+    json.reserve(256);
+    json = "[";
+    bool first = true;
+    char oid_buf[128];
+    for (auto *c : esphome::App.get_climates()) {
+      if (!first) json += ",";
+      first = false;
+      json += "{\"key\":\"" + local_endpoint_json_escape(std::string(c->get_object_id_to(oid_buf).c_str())) +
+              "\",\"name\":\"" + local_endpoint_json_escape(std::string(c->get_name())) + "\"}";
+    }
+    json += "]";
+    return json;
+  }
+
+  bool canHandle(esphome::web_server_idf::AsyncWebServerRequest *request) const override {
+    if (request->method() != HTTP_GET) return false;
+    char url_buf[esphome::web_server_idf::AsyncWebServerRequest::URL_BUF_SIZE];
+    esphome::StringRef url = request->url_to(url_buf);
+    return strncmp(url.c_str(), "/local_climates", 15) == 0;
+  }
+
+  void handleRequest(esphome::web_server_idf::AsyncWebServerRequest *request) override {
+    std::string json = build_json();
+    httpd_req_t *req = *request;
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_send(req, json.c_str(), HTTPD_RESP_USE_STRLEN);
+    if (err != ESP_OK) ESP_LOGE("climate", "httpd_resp_send failed: %d", err);
+  }
+};
+
+inline void register_local_climate_endpoint(esphome::web_server_idf::AsyncWebServer &server) {
+  static bool registered = false;
+  if (registered) return;
+  server.addHandler(new LocalClimateHandler());
+  registered = true;
+  ESP_LOGI("climate", "Local climate endpoint registered");
+}
+#else
+// No local climate: platform compiled in on this device - keep the
+// registration call below a no-op so callers don't need to guard it.
+inline void register_local_climate_endpoint(esphome::web_server_idf::AsyncWebServer &) {}
+#endif  // USE_CLIMATE
 
 class LocalActionHandler : public esphome::web_server_idf::AsyncWebHandler {
  public:

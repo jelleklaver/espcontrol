@@ -76,6 +76,13 @@ constexpr lv_coord_t CLIMATE_OPTION_MENU_ROW_GAP_PX = 2;
 
 struct ClimateControlCtx {
   std::string entity_id;
+  // When true, entity_id names a local ESPHome climate component's object_id
+  // instead of a Home Assistant entity_id; local_climate is that component,
+  // found once at setup via find_local_climate(). No Home Assistant needed.
+  bool is_local = false;
+#ifdef USE_CLIMATE
+  esphome::climate::Climate *local_climate = nullptr;
+#endif
   std::string configured_label;
   std::string friendly_name;
   std::string hvac_mode = "off";
@@ -264,6 +271,50 @@ inline int &climate_control_ref_count() {
 inline void reset_climate_control_refs() {
   climate_control_ref_count() = 0;
 }
+
+#ifdef USE_CLIMATE
+// Mirrors the lowercase, underscore-separated strings Home Assistant uses for
+// hvac_mode/hvac_action, since the rest of this file (climate_hvac_service_value,
+// climate_action_label, etc.) is written entirely in terms of those strings.
+inline std::string climate_local_mode_to_string(esphome::climate::ClimateMode mode) {
+  switch (mode) {
+    case esphome::climate::CLIMATE_MODE_HEAT: return "heat";
+    case esphome::climate::CLIMATE_MODE_COOL: return "cool";
+    case esphome::climate::CLIMATE_MODE_HEAT_COOL: return "heat_cool";
+    case esphome::climate::CLIMATE_MODE_FAN_ONLY: return "fan_only";
+    case esphome::climate::CLIMATE_MODE_DRY: return "dry";
+    case esphome::climate::CLIMATE_MODE_AUTO: return "auto";
+    default: return "off";
+  }
+}
+
+inline esphome::climate::ClimateMode climate_local_mode_from_string(const std::string &value) {
+  if (value == "heat") return esphome::climate::CLIMATE_MODE_HEAT;
+  if (value == "cool") return esphome::climate::CLIMATE_MODE_COOL;
+  if (value == "heat_cool") return esphome::climate::CLIMATE_MODE_HEAT_COOL;
+  if (value == "fan_only") return esphome::climate::CLIMATE_MODE_FAN_ONLY;
+  if (value == "dry") return esphome::climate::CLIMATE_MODE_DRY;
+  if (value == "auto") return esphome::climate::CLIMATE_MODE_AUTO;
+  return esphome::climate::CLIMATE_MODE_OFF;
+}
+
+inline std::string climate_local_action_to_string(esphome::climate::ClimateAction action) {
+  switch (action) {
+    case esphome::climate::CLIMATE_ACTION_HEATING: return "heating";
+    case esphome::climate::CLIMATE_ACTION_COOLING: return "cooling";
+    case esphome::climate::CLIMATE_ACTION_DRYING: return "drying";
+    case esphome::climate::CLIMATE_ACTION_FAN: return "fan";
+    case esphome::climate::CLIMATE_ACTION_DEFROSTING: return "defrosting";
+    case esphome::climate::CLIMATE_ACTION_IDLE: return "idle";
+    default: return "off";
+  }
+}
+
+inline int climate_local_temp_tenths(float value) {
+  if (std::isnan(value)) return 0;
+  return static_cast<int>(std::lround(value * 10.0f));
+}
+#endif  // USE_CLIMATE
 
 inline std::string climate_lower(std::string value) {
   for (char &ch : value) ch = (char)std::tolower((unsigned char)ch);
@@ -1119,13 +1170,49 @@ inline void climate_update_card(ClimateControlCtx *ctx) {
   }
 }
 
-inline void climate_send_action(const std::string &entity_id,
+#ifdef USE_CLIMATE
+inline void climate_send_local_action(ClimateControlCtx *ctx, const std::string &service,
+                                      const std::vector<std::pair<const char *, std::string>> &data) {
+  if (!ctx->local_climate) return;
+  if (service == "climate.set_temperature") {
+    auto call = ctx->local_climate->make_call();
+    for (const auto &item : data) {
+      std::string key(item.first);
+      if (key == "temperature") call.set_target_temperature(std::stof(item.second));
+      else if (key == "target_temp_low") call.set_target_temperature_low(std::stof(item.second));
+      else if (key == "target_temp_high") call.set_target_temperature_high(std::stof(item.second));
+    }
+    call.perform();
+  } else if (service == "climate.set_hvac_mode") {
+    for (const auto &item : data) {
+      if (std::string(item.first) == "hvac_mode") {
+        ctx->local_climate->make_call().set_mode(climate_local_mode_from_string(item.second)).perform();
+      }
+    }
+  } else {
+    // Fan/swing/preset mode changes: local climate cards never show those
+    // tabs (climate_apply_local_state leaves the mode lists empty), so this
+    // is unreachable in practice. Logged rather than silently dropped in
+    // case a future local climate feature reaches this path.
+    ESP_LOGW("climate", "Local climate does not support '%s'", service.c_str());
+  }
+}
+#endif
+
+inline void climate_send_action(ClimateControlCtx *ctx,
                                 const char *service,
                                 const std::vector<std::pair<const char *, std::string>> &data) {
-  if (entity_id.empty() || service == nullptr || service[0] == '\0') return;
+  if (!ctx || service == nullptr || service[0] == '\0') return;
+#ifdef USE_CLIMATE
+  if (ctx->is_local) {
+    climate_send_local_action(ctx, service, data);
+    return;
+  }
+#endif
+  if (ctx->entity_id.empty()) return;
   esphome::api::HomeassistantActionRequest req;
   if (!ha_action_begin(req, service, false, data.size() + 1)) return;
-  ha_action_add_entity(req, entity_id);
+  ha_action_add_entity(req, ctx->entity_id);
   for (const auto &item : data) {
     ha_action_add_data(req, item.first, item.second.c_str());
   }
@@ -1145,12 +1232,12 @@ inline void climate_send_temperature(ClimateControlCtx *ctx) {
   espcontrol::climate::CommandKind command = espcontrol::climate::command_kind(
     kind, climate_target_values_complete(ctx));
   if (command == espcontrol::climate::CommandKind::RANGE) {
-    climate_send_action(ctx->entity_id, "climate.set_temperature", {
+    climate_send_action(ctx, "climate.set_temperature", {
       {"target_temp_low", climate_service_temp_value(ctx->low_tenths)},
       {"target_temp_high", climate_service_temp_value(ctx->high_tenths)},
     });
   } else if (command == espcontrol::climate::CommandKind::SINGLE) {
-    climate_send_action(ctx->entity_id, "climate.set_temperature", {
+    climate_send_action(ctx, "climate.set_temperature", {
       {"temperature", climate_service_temp_value(ctx->target_tenths)},
     });
   } else {
@@ -1343,20 +1430,20 @@ inline void climate_send_option(ClimateControlCtx *ctx, const std::string &kind,
     std::string service_value = climate_hvac_service_value(value);
     climate_select_target_for_mode(ctx, service_value);
     ctx->hvac_mode = service_value;
-    climate_send_action(ctx->entity_id, "climate.set_hvac_mode", {{"hvac_mode", service_value}});
+    climate_send_action(ctx, "climate.set_hvac_mode", {{"hvac_mode", service_value}});
   } else if (kind == "fan") {
     ctx->fan_mode = value;
-    climate_send_action(ctx->entity_id, "climate.set_fan_mode", {{"fan_mode", value}});
+    climate_send_action(ctx, "climate.set_fan_mode", {{"fan_mode", value}});
   } else if (kind == "swing") {
     ctx->swing_mode = value;
-    climate_send_action(ctx->entity_id, "climate.set_swing_mode", {{"swing_mode", value}});
+    climate_send_action(ctx, "climate.set_swing_mode", {{"swing_mode", value}});
   } else if (kind == "horizontal_swing") {
     ctx->swing_horizontal_mode = value;
-    climate_send_action(ctx->entity_id, "climate.set_swing_horizontal_mode",
+    climate_send_action(ctx, "climate.set_swing_horizontal_mode",
                         {{"swing_horizontal_mode", value}});
   } else if (kind == "preset") {
     ctx->preset_mode = value;
-    climate_send_action(ctx->entity_id, "climate.set_preset_mode", {{"preset_mode", value}});
+    climate_send_action(ctx, "climate.set_preset_mode", {{"preset_mode", value}});
   } else if (kind == "target") {
     ctx->edit_high = climate_lower(climate_trim(value)) == "high";
   }
@@ -2652,6 +2739,10 @@ inline ClimateControlCtx *create_climate_control_context(
     lv_obj_t *sensor_container, lv_obj_t *value_lbl, lv_obj_t *unit_lbl) {
   ClimateControlCtx *ctx = new ClimateControlCtx();
   ctx->entity_id = p.entity;
+  ctx->is_local = (p.sensor == "local");
+#ifdef USE_CLIMATE
+  if (ctx->is_local) ctx->local_climate = find_local_climate(p.entity);
+#endif
   ctx->configured_label = p.label;
   ctx->precision = parse_precision(p.precision);
   climate_apply_saved_range(ctx, p.precision);
@@ -2695,8 +2786,78 @@ inline ClimateControlCtx *create_climate_control_context(
 
 #include "button_grid_climate_subscriptions.h"
 
+#ifdef USE_CLIMATE
+// Reads the local climate component's live C++ state into ctx, in the same
+// tenths-of-a-degree/lowercase-string shape the rest of this file expects
+// from Home Assistant. Local mode only wires up temperature and heat/off
+// control (see fan_modes/swing_modes/preset_modes below being left empty),
+// so those tabs stay hidden regardless of what the component itself supports.
+inline void climate_apply_local_state(ClimateControlCtx *ctx) {
+  if (!ctx || !ctx->local_climate) return;
+  auto *c = ctx->local_climate;
+  auto traits = c->get_traits();
+  ctx->available = true;
+  ctx->hvac_mode = climate_local_mode_to_string(c->mode);
+  ctx->hvac_action = traits.has_feature_flags(esphome::climate::CLIMATE_SUPPORTS_ACTION)
+    ? climate_local_action_to_string(c->action) : "";
+  ctx->hvac_modes.clear();
+  for (auto mode : traits.get_supported_modes()) {
+    ctx->hvac_modes.push_back(climate_local_mode_to_string(mode));
+  }
+  ctx->fan_modes.clear();
+  ctx->swing_modes.clear();
+  ctx->swing_horizontal_modes.clear();
+  ctx->preset_modes.clear();
+  bool range = traits.has_feature_flags(esphome::climate::CLIMATE_SUPPORTS_TWO_POINT_TARGET_TEMPERATURE);
+  ctx->supported_features_known = true;
+  ctx->supported_features = range
+    ? CLIMATE_SUPPORT_TARGET_TEMPERATURE_RANGE
+    : CLIMATE_SUPPORT_TARGET_TEMPERATURE;
+  ctx->has_current = !std::isnan(c->current_temperature);
+  ctx->current_tenths = climate_local_temp_tenths(c->current_temperature);
+  if (range) {
+    ctx->has_target = false;
+    ctx->has_low = !std::isnan(c->target_temperature_low);
+    ctx->has_high = !std::isnan(c->target_temperature_high);
+    ctx->low_tenths = climate_local_temp_tenths(c->target_temperature_low);
+    ctx->high_tenths = climate_local_temp_tenths(c->target_temperature_high);
+  } else {
+    ctx->has_target = !std::isnan(c->target_temperature);
+    ctx->target_tenths = climate_local_temp_tenths(c->target_temperature);
+    ctx->has_low = false;
+    ctx->has_high = false;
+  }
+  if (!ctx->custom_min) {
+    ctx->min_tenths = climate_local_temp_tenths(traits.get_visual_min_temperature());
+    ctx->received_min = true;
+  }
+  if (!ctx->custom_max) {
+    ctx->max_tenths = climate_local_temp_tenths(traits.get_visual_max_temperature());
+    ctx->received_max = true;
+  }
+  climate_normalize_range(ctx);
+  float step = traits.get_visual_target_temperature_step();
+  if (step > 0) ctx->step_tenths = climate_local_temp_tenths(step);
+}
+#endif  // USE_CLIMATE
+
 inline void subscribe_climate_control_state(ClimateControlCtx *ctx) {
-  if (!ctx || ctx->entity_id.empty()) return;
+  if (!ctx) return;
+#ifdef USE_CLIMATE
+  if (ctx->is_local) {
+    if (!ctx->local_climate) return;
+    climate_apply_local_state(ctx);
+    climate_update_card(ctx);
+    climate_control_set_modal_value(ctx);
+    ctx->local_climate->add_on_state_callback([ctx](esphome::climate::Climate &) {
+      climate_apply_local_state(ctx);
+      climate_update_card(ctx);
+      climate_control_set_modal_value(ctx);
+    });
+    return;
+  }
+#endif
+  if (ctx->entity_id.empty()) return;
   const uint32_t generation = ha_subscription_generation();
   HaCallbackOwnerScope owner_scope(ctx);
   ctx->subscription_generation = generation;

@@ -1210,7 +1210,11 @@ export const CARD_CONTRACT_CARDS: Readonly<Record<string, CardTypeSpec>> = {
           "hook": "normalize_climate_fields"
         },
         "sensor": {
-          "policy": "clear"
+          "policy": "allowed",
+          "values": [
+            "local"
+          ],
+          "fallback": ""
         },
         "unit": {
           "policy": "clear"
@@ -1340,7 +1344,11 @@ export const CARD_CONTRACT_CARDS: Readonly<Record<string, CardTypeSpec>> = {
           "hook": "normalize_climate_fields"
         },
         "sensor": {
-          "policy": "clear"
+          "policy": "allowed",
+          "values": [
+            "local"
+          ],
+          "fallback": ""
         },
         "unit": {
           "policy": "clear"

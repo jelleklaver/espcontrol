@@ -40,6 +40,7 @@ extern "C" void espcontrol_register_web_server_handlers(
   espcontrol::register_screensaver_pin_endpoint(*server);
   register_local_sensor_endpoint(*server);
   register_local_action_endpoint(*server);
+  register_local_climate_endpoint(*server);
   espcontrol::configuration::register_panel_config_capabilities_endpoint(*server);
   espcontrol::configuration::register_panel_config_read_endpoint(*server);
   espcontrol::configuration::register_panel_config_write_endpoint(*server);

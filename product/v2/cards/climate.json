@@ -13,7 +13,7 @@
       "entity": { "policy": "keep" }, "label": { "policy": "keep" },
       "icon": { "policy": "hook", "hook": "normalize_climate_fields" },
       "icon_on": { "policy": "hook", "hook": "normalize_climate_fields" },
-      "sensor": { "policy": "clear" }, "unit": { "policy": "clear" },
+      "sensor": { "policy": "allowed", "values": ["local"], "fallback": "" }, "unit": { "policy": "clear" },
       "type": { "policy": "alias", "aliases": { "climate": "climate_control" } },
       "precision": { "policy": "hook", "hook": "normalize_climate_fields" },
       "options": { "policy": "hook", "hook": "normalize_climate_options" }

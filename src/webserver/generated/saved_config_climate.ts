@@ -14,7 +14,7 @@ export function normalizeSavedConfigClimate(
 ): boolean {
   if (config.type !== "climate" && config.type !== "climate_control") return false;
   normalizeFields(config);
-    config.sensor = "";
+    if (config.sensor !== "local") config.sensor = "";
     config.unit = "";
     if (config.type === "climate") config.type = "climate_control";
   config.options = normalizeOptions(config.options || "", config);

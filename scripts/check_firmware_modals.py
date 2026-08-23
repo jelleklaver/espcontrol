@@ -549,7 +549,7 @@ def firmware_climate_control_tab_errors(root: Path) -> list[str]:
     ):
         errors.append("components/espcontrol/button_grid_climate.h: show the swing tab only when Home Assistant exposes swing modes")
     if (
-        'climate_send_action(ctx->entity_id, "climate.set_swing_mode", {{"swing_mode", value}});' not in text
+        'climate_send_action(ctx, "climate.set_swing_mode", {{"swing_mode", value}});' not in text
         or 'ui.tab_row, find_icon("Arrow Up Down"), ctx->icon_font,' not in text
     ):
         errors.append("components/espcontrol/button_grid_climate.h: keep the swing mode action and requested tab icon")

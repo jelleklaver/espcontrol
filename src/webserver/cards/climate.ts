@@ -8,7 +8,7 @@ import {
     cardContractPickerKey,
 } from "../generated/card_contract";
 import { iconSlug } from "../application/ui_primitives";
-import type { CardRegistry } from "../application/card_registry";
+import type { CardRegistry, CardUiServices } from "../application/card_registry";
 import type { ConfigModalTabOptionsFeature } from "../application/config_modal_tab_options";
 import type { ConfigAccessClimateAlarmOptionsFeature } from "../application/config_access_climate_alarm_options";
 import type { ClockBarFeature } from "../application/clock_bar_state";
@@ -21,7 +21,9 @@ export function registerClimateCardTypes(
     clockBar: Pick<ClockBarFeature, "temperatureUnitSymbol">,
     renderQueue: ButtonSettingsRenderQueueFeature,
     fields: ControlsFieldsFeature,
+    cardUi: CardUiServices,
 ): void {
+    const { renderButtonSettings } = cardUi;
     const { cardBadgeLabelHtml, cardSensorPreviewHtml, condField } = fields;
     const { temperatureUnitSymbol } = clockBar;
     const {
@@ -32,6 +34,7 @@ export function registerClimateCardTypes(
     } = modalTabs;
     const {
         normalizeClimateOptions,
+        climateCardIsLocal,
         climateLabelDisplayMode,
         setClimateLabelDisplayMode,
         climateNumberDisplayMode,
@@ -43,6 +46,16 @@ export function registerClimateCardTypes(
     } = accessOptions;
     // Climate card: thermostat status plus full-screen climate controls.
     const CLIMATE_CARD_METADATA: any = {
+        source: {
+            label: "Source",
+            options: [
+                ["ha", "Home Assistant"],
+                ["local", "Local Climate"],
+            ],
+            value: function (this: any, b?: any) {
+                return climateCardIsLocal(b) ? "local" : "ha";
+            },
+        },
         entity: {
             label: "Climate Entity",
             idSuffix: "entity",
@@ -87,6 +100,81 @@ export function registerClimateCardTypes(
             badge: "thermostat",
         },
     };
+    function renderClimateLocalEntityField(this: any, panel?: any, b?: any, helpers?: any) {
+        var wrap: any = document.createElement("div");
+        wrap.className = "sp-field";
+        wrap.appendChild(helpers.fieldLabel("Climate Entity", helpers.idPrefix + "climate-local-entity"));
+        var loadingDiv: any = document.createElement("div");
+        loadingDiv.className = "sp-hint";
+        loadingDiv.textContent = "Loading local climate entities…";
+        wrap.appendChild(loadingDiv);
+        panel.appendChild(wrap);
+        function buildDropdown(this: any, climates?: any) {
+            wrap.innerHTML = "";
+            wrap.appendChild(helpers.fieldLabel("Climate Entity", helpers.idPrefix + "climate-local-entity"));
+            if (!climates.length) {
+                var noneDiv: any = document.createElement("div");
+                noneDiv.className = "sp-banner sp-error";
+                noneDiv.textContent = "No local climate entities found on this device.";
+                wrap.appendChild(noneDiv);
+                return;
+            }
+            var sel: any = document.createElement("select");
+            sel.className = "sp-select";
+            sel.id = helpers.idPrefix + "climate-local-entity";
+            var placeholder: any = document.createElement("option");
+            placeholder.value = "";
+            placeholder.textContent = "Select a local climate…";
+            sel.appendChild(placeholder);
+            climates.forEach(function (this: any, c?: any) {
+                var opt: any = document.createElement("option");
+                opt.value = c.key;
+                opt.textContent = c.name || c.key;
+                if (c.key === b.entity)
+                    opt.selected = true;
+                sel.appendChild(opt);
+            });
+            sel.addEventListener("change", function (this: any) {
+                var key: any = sel.value;
+                b.entity = key;
+                helpers.saveField("entity", key);
+                if (!b.label) {
+                    var match: any = climates.find(function (this: any, c?: any) { return c.key === key; });
+                    if (match) {
+                        b.label = match.name || key;
+                        helpers.saveField("label", b.label);
+                    }
+                }
+            });
+            wrap.appendChild(sel);
+            helpers.requireField(sel, "Select a local climate entity before saving.");
+        }
+        function buildManualInput(this: any) {
+            wrap.innerHTML = "";
+            wrap.className = "sp-local-picker-fallback";
+            var errDiv: any = document.createElement("div");
+            errDiv.className = "sp-banner sp-error";
+            errDiv.textContent = "Could not reach device. Enter the climate object_id manually.";
+            wrap.appendChild(errDiv);
+            wrap.appendChild(helpers.fieldLabel("Climate Object ID", helpers.idPrefix + "climate-local-entity-key"));
+            var keyInp: any = helpers.textInput(helpers.idPrefix + "climate-local-entity-key", b.entity, "e.g. ch_climate");
+            wrap.appendChild(keyInp);
+            helpers.bindField(keyInp, "entity", true);
+            helpers.requireField(keyInp, "Add a climate object_id before saving.");
+        }
+        fetch("/local_climates")
+            .then(function (this: any, resp?: any) {
+            if (!resp.ok)
+                throw new Error("HTTP " + resp.status);
+            return resp.json();
+        })
+            .then(function (this: any, data?: any) {
+            buildDropdown(data);
+        })
+            .catch(function (this: any) {
+            buildManualInput();
+        });
+    }
     registry.register("climate", {
         label: function (this: any) { return cardContractCardLabel("climate"); },
         allowInSubpage: function (this: any) { return cardContractAllowInSubpage("climate"); },
@@ -112,8 +200,29 @@ export function registerClimateCardTypes(
                 b.type = "climate_control";
                 helpers.saveField("type", b.type);
             }
-            b.sensor = "";
             b.unit = "";
+            var sourceControl: any = helpers.renderCardSegmentControl(panel, b, helpers, {
+                segment: Object.assign({}, CLIMATE_CARD_METADATA.source, {
+                    onSelect: function (this: any, button?: any, cardHelpers?: any, value?: any) {
+                        setSource(value);
+                    },
+                }),
+            });
+            var sourceButtons: any = sourceControl.buttons;
+            sourceButtons.ha.classList.toggle("active", !climateCardIsLocal(b));
+            sourceButtons.local.classList.toggle("active", climateCardIsLocal(b));
+            function setSource(this: any, value?: any) {
+                var local: any = value === "local";
+                if (local === climateCardIsLocal(b))
+                    return;
+                b.entity = "";
+                b.sensor = local ? "local" : "";
+                helpers.saveField("entity", b.entity);
+                helpers.saveField("sensor", b.sensor);
+                renderButtonSettings();
+            }
+            if (!climateCardIsLocal(b))
+                b.sensor = "";
             if (!b.icon)
                 b.icon = "Thermostat";
             if (!b.icon_on)
@@ -124,7 +233,11 @@ export function registerClimateCardTypes(
                 b.precision = normalizedPrecision;
                 helpers.saveField("precision", normalizedPrecision);
             }
-            helpers.renderCardEntityField(panel, b, helpers, CLIMATE_CARD_METADATA);
+            if (climateCardIsLocal(b)) {
+                renderClimateLocalEntityField(panel, b, helpers);
+            } else {
+                helpers.renderCardEntityField(panel, b, helpers, CLIMATE_CARD_METADATA);
+            }
             var modalTabsDisclosure: any = helpers.disclosureSection("Modal Settings", helpers.idPrefix + "climate-modal-tabs", b._modalSettingsOpen === true);
             renderModalTabSettings(modalTabsDisclosure.section, b, helpers, {
                 definitions: climateControlTabDefinitions,

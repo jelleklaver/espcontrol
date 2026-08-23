@@ -10,7 +10,7 @@ inline bool normalize_saved_config_climate(Config &config, FieldHook normalize_f
                                            OptionHook normalize_options) {
   if (config.type != "climate" && config.type != "climate_control") return false;
   normalize_fields(config);
-    config.sensor.clear();
+    if (config.sensor != "local") config.sensor = "";
     config.unit.clear();
     if (config.type == "climate") config.type = "climate_control";
   config.options = normalize_options(config.options, config);

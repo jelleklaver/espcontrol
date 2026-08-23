@@ -3521,7 +3521,11 @@
               "hook": "normalize_climate_fields"
             },
             "sensor": {
-              "policy": "clear"
+              "policy": "allowed",
+              "values": [
+                "local"
+              ],
+              "fallback": ""
             },
             "unit": {
               "policy": "clear"
@@ -3651,7 +3655,11 @@
               "hook": "normalize_climate_fields"
             },
             "sensor": {
-              "policy": "clear"
+              "policy": "allowed",
+              "values": [
+                "local"
+              ],
+              "fallback": ""
             },
             "unit": {
               "policy": "clear"
