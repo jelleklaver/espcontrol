@@ -276,6 +276,16 @@ inline void reset_climate_control_refs() {
   climate_control_ref_count() = 0;
 }
 
+inline bool climate_control_ctx_alive(ClimateControlCtx *ctx) {
+  if (!ctx) return false;
+  ClimateControlCtx **refs = climate_control_refs();
+  int count = climate_control_ref_count();
+  for (int i = 0; i < count; i++) {
+    if (refs[i] == ctx) return true;
+  }
+  return false;
+}
+
 #ifdef USE_CLIMATE
 // Mirrors the lowercase, underscore-separated strings Home Assistant uses for
 // hvac_mode/hvac_action, since the rest of this file (climate_hvac_service_value,
@@ -2961,18 +2971,35 @@ inline void climate_apply_local_state(ClimateControlCtx *ctx) {
 }
 #endif  // USE_CLIMATE
 
+#ifdef USE_CLIMATE
+inline void climate_refresh_local_state(ClimateControlCtx *ctx) {
+  climate_apply_local_state(ctx);
+  climate_update_card(ctx);
+  climate_control_set_modal_value(ctx);
+}
+#endif  // USE_CLIMATE
+
 inline void subscribe_climate_control_state(ClimateControlCtx *ctx) {
   if (!ctx) return;
 #ifdef USE_CLIMATE
   if (ctx->is_local) {
     if (!ctx->local_climate) return;
-    climate_apply_local_state(ctx);
-    climate_update_card(ctx);
-    climate_control_set_modal_value(ctx);
+    climate_refresh_local_state(ctx);
     ctx->local_climate->add_on_state_callback([ctx](esphome::climate::Climate &) {
-      climate_apply_local_state(ctx);
-      climate_update_card(ctx);
-      climate_control_set_modal_value(ctx);
+      // Unlike Home Assistant state (delivered from the API task), a local
+      // climate's state callback can fire synchronously from inside the very
+      // touch event that caused it - e.g. dragging the modal's arc calls
+      // ClimateCall::perform() directly, which re-enters this callback before
+      // LVGL's own event dispatch for that touch has finished. Updating
+      // widgets (icon_lbl, arc, etc.) reentrantly like that can leave LVGL's
+      // internal state inconsistent, so defer the refresh to the next tick
+      // instead of touching them from here. lv_timer_del deletes the timer
+      // from inside its own callback, which is a supported LVGL pattern.
+      lv_timer_create([](lv_timer_t *timer) {
+        ClimateControlCtx *ctx = static_cast<ClimateControlCtx *>(lv_timer_get_user_data(timer));
+        lv_timer_del(timer);
+        if (climate_control_ctx_alive(ctx)) climate_refresh_local_state(ctx);
+      }, 1, ctx);
     });
     return;
   }
