@@ -2740,6 +2740,8 @@ inline ClimateControlCtx *create_climate_control_context(
   ClimateControlCtx *ctx = new ClimateControlCtx();
   ctx->entity_id = p.entity;
   ctx->is_local = (p.sensor == "local");
+  ESP_LOGD("climate", "Creating climate context: entity='%s' sensor='%s' is_local=%d",
+           p.entity.c_str(), p.sensor.c_str(), (int) ctx->is_local);
 #ifdef USE_CLIMATE
   if (ctx->is_local) ctx->local_climate = find_local_climate(p.entity);
 #endif
