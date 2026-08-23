@@ -22,3 +22,6 @@ packages:
 web_server:
   js_url: ""
   js_include: "../../docs/public/webserver/embedded/www.js"
+
+logger:
+  level: DEBUG

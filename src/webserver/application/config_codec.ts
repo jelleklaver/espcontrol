@@ -542,7 +542,7 @@ export function createConfigCodecFeature(
         if (type === "screen_lock")
             label = "";
         var sensor: any = isActionOptionSelect ? ACTION_CARD_OPTION_SELECT_ACTION :
-            (isBrightnessSliderType(type) || type === "calendar" || type === "clock" || isClimateCardType(type) || type === "light_switch" || type === "light_control" || type === "alarm" || type === "screen_lock" || type === "timezone" || isFanCardType(type)) ? "" : (b && b.sensor || "");
+            (isBrightnessSliderType(type) || type === "calendar" || type === "clock" || (isClimateCardType(type) && !(b && b.sensor === "local")) || type === "light_switch" || type === "light_control" || type === "alarm" || type === "screen_lock" || type === "timezone" || isFanCardType(type)) ? "" : (b && b.sensor || "");
         if (type === "lock" && sensor !== "lock" && sensor !== "unlock")
             sensor = "";
         if (b && b.type === "local")
