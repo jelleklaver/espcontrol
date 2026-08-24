@@ -26,32 +26,73 @@ sensor:
       id: dhw_temperature
       name: "Hot Water Temperature"
     t_dhw2:
+      id: dhw_temperature_2
       name: "Hot Water Temperature 2"
     rel_mod_level:
       id: rel_mod_level
       name: "Boiler Relative Modulation Level"
     t_outside:
+      id: outside_temperature
       name: "Outside Temperature"
     t_ret:
+      id: return_temperature
       name: "Return Water Temperature"
     max_t_set:
+      id: max_ch_setpoint
       name: "Max CH Setpoint"
     max_t_set_ub:
+      id: max_ch_setpoint_ub
       name: "Upper Bound of CH Setpoint"
     max_t_set_lb:
+      id: max_ch_setpoint_lb
       name: "Lower Bound CH Setpoint"
     t_exhaust:
+      id: exhaust_temperature
       name: "Boiler Exhaust Temperature"
       entity_category: diagnostic
     ch_pressure:
+      id: ch_water_pressure
       name: "Water Pressure"
       entity_category: diagnostic
     oem_fault_code:
+      id: oem_fault_code
       name: "OEM Fault Code"
       entity_category: diagnostic
     oem_diagnostic_code:
+      id: oem_diagnostic_code
       name: "OEM Diagnostic Code"
       entity_category: diagnostic
+
+  - platform: pid
+    id: pid_result
+    name: "Heating PID Result"
+    climate_id: ch_climate
+    type: RESULT
+    internal: true
+  - platform: pid
+    id: pid_error
+    name: "Heating PID Error"
+    climate_id: ch_climate
+    type: ERROR
+    internal: true
+  - platform: pid
+    id: pid_proportional
+    name: "Heating PID Proportional"
+    climate_id: ch_climate
+    type: PROPORTIONAL
+    internal: true
+  - platform: pid
+    id: pid_integral
+    name: "Heating PID Integral"
+    climate_id: ch_climate
+    type: INTEGRAL
+    internal: true
+  - platform: pid
+    id: pid_derivative
+    name: "Heating PID Derivative"
+    climate_id: ch_climate
+    type: DERIVATIVE
+    internal: true
 
 output:
   - platform: opentherm
@@ -166,3 +207,32 @@ climate:
             - switch.turn_off: ch_enable
           else:
             - switch.turn_on: ch_enable
+
+esphome:
+  on_boot:
+    # Contributes the boiler/PID readings above to the Info tab of any local
+    # climate card on this device (see register_climate_info_provider in
+    # button_grid_climate.h) - the tab itself has no idea these come from
+    # OpenTherm, so nothing here needs touching if the card ever changes.
+    - then:
+        - lambda: |-
+            register_climate_info_provider([](std::vector<ClimateInfoRow> &rows) {
+              auto fmt = [](float value, int precision, const char *suffix = "") -> std::string {
+                if (std::isnan(value)) return "--";
+                char buf[24];
+                snprintf(buf, sizeof(buf), "%.*f%s", precision, value, suffix);
+                return buf;
+              };
+              rows.push_back({"Heating Temp", fmt(id(ch_temperature).state, 1)});
+              rows.push_back({"Hot Water Temp", fmt(id(dhw_temperature).state, 1)});
+              rows.push_back({"Outside Temp", fmt(id(outside_temperature).state, 1)});
+              rows.push_back({"Return Temp", fmt(id(return_temperature).state, 1)});
+              rows.push_back({"Max CH Setpoint", fmt(id(max_ch_setpoint).state, 1)});
+              rows.push_back({"Mod Level", fmt(id(rel_mod_level).state, 0, "%")});
+              rows.push_back({"Water Pressure", fmt(id(ch_water_pressure).state, 2)});
+              rows.push_back({"PID Result", fmt(id(pid_result).state, 3)});
+              rows.push_back({"PID Error", fmt(id(pid_error).state, 2)});
+              rows.push_back({"PID P", fmt(id(pid_proportional).state, 3)});
+              rows.push_back({"PID I", fmt(id(pid_integral).state, 3)});
+              rows.push_back({"PID D", fmt(id(pid_derivative).state, 3)});
+            });
