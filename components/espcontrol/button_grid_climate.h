@@ -1935,6 +1935,26 @@ inline const char *climate_control_tab_kind(ClimateControlTab tab) {
   return "";
 }
 
+// ── Local climate info providers ──────────────────────────────────────
+//
+// Lets device-specific code (e.g. an OpenTherm boiler package) contribute
+// extra rows to every local climate's Info tab - PID diagnostics, boiler
+// sensor readings, etc. - without button_grid_climate.h needing to know
+// anything about which device or components produced them. Mirrors the
+// register_local_action()/register_internal_relay() pattern.
+
+using ClimateInfoRow = std::pair<std::string, std::string>;
+using ClimateInfoProvider = std::function<void(std::vector<ClimateInfoRow> &)>;
+
+inline std::vector<ClimateInfoProvider> &climate_info_providers() {
+  static std::vector<ClimateInfoProvider> providers;
+  return providers;
+}
+
+inline void register_climate_info_provider(ClimateInfoProvider provider) {
+  climate_info_providers().push_back(std::move(provider));
+}
+
 inline void climate_info_panel_add_row(lv_obj_t *parent, const std::string &label,
                                        const std::string &value, const lv_font_t *font) {
   lv_obj_t *row = lv_label_create(parent);
@@ -1998,6 +2018,10 @@ inline void climate_open_info_panel(ClimateControlCtx *ctx) {
     modes += mode;
   }
   row("Modes", modes.empty() ? "--" : modes);
+
+  std::vector<ClimateInfoRow> extra_rows;
+  for (auto &provider : climate_info_providers()) provider(extra_rows);
+  for (const auto &item : extra_rows) row(item.first.c_str(), item.second);
 
   lv_obj_move_foreground(ui.info_view);
 }
