@@ -160,6 +160,12 @@ target_compile_options(climate_state_logic_test PRIVATE -Wall -Wextra -Werror)
 target_include_directories(climate_state_logic_test PRIVATE ../../components/espcontrol)
 add_test(NAME climate_state_logic_test COMMAND climate_state_logic_test)
 
+add_executable(heating_schedule_test heating_schedule_test.cpp)
+target_compile_features(heating_schedule_test PRIVATE cxx_std_17)
+target_compile_options(heating_schedule_test PRIVATE -Wall -Wextra -Werror)
+target_include_directories(heating_schedule_test PRIVATE ../../components/espcontrol)
+add_test(NAME heating_schedule_test COMMAND heating_schedule_test)
+
 add_executable(media_volume_capability_test media_volume_capability_test.cpp)
 target_compile_features(media_volume_capability_test PRIVATE cxx_std_17)
 target_compile_options(media_volume_capability_test PRIVATE -Wall -Wextra -Werror)

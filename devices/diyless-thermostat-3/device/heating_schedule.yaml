@@ -1,0 +1,202 @@
+# =============================================================================
+# HEATING SCHEDULE - Weekly on-device target temperature schedule
+# =============================================================================
+# Configured from Home Assistant only (no on-device UI): each day exposes one
+# compact text entity of "HH:MM=temperature" periods separated by ';', e.g.
+# "06:30=20.5;08:30=17;17:00=21;22:00=16". Parsing, lookup, and the in-memory
+# schedule state live in heating_schedule.h so the schedule keeps applying to
+# the boiler's climate entity even when Home Assistant is offline - the check
+# below only needs the panel's own time source.
+# =============================================================================
+
+switch:
+  - platform: template
+    name: "Heating Schedule Enabled"
+    id: heating_schedule_enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    on_turn_on:
+      - script.execute: heating_schedule_force_check
+
+text:
+  - platform: template
+    name: "Heating Schedule: Monday"
+    id: heating_schedule_monday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(0, x);'
+        - script.execute: heating_schedule_force_check
+
+  - platform: template
+    name: "Heating Schedule: Tuesday"
+    id: heating_schedule_tuesday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(1, x);'
+        - script.execute: heating_schedule_force_check
+
+  - platform: template
+    name: "Heating Schedule: Wednesday"
+    id: heating_schedule_wednesday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(2, x);'
+        - script.execute: heating_schedule_force_check
+
+  - platform: template
+    name: "Heating Schedule: Thursday"
+    id: heating_schedule_thursday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(3, x);'
+        - script.execute: heating_schedule_force_check
+
+  - platform: template
+    name: "Heating Schedule: Friday"
+    id: heating_schedule_friday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(4, x);'
+        - script.execute: heating_schedule_force_check
+
+  - platform: template
+    name: "Heating Schedule: Saturday"
+    id: heating_schedule_saturday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(5, x);'
+        - script.execute: heating_schedule_force_check
+
+  - platform: template
+    name: "Heating Schedule: Sunday"
+    id: heating_schedule_sunday
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 64
+    mode: text
+    entity_category: config
+    icon: "mdi:calendar-clock"
+    update_interval: never
+    on_value:
+      then:
+        - lambda: 'espcontrol::heating_schedule::set_day_schedule(6, x);'
+        - script.execute: heating_schedule_force_check
+
+esphome:
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          using namespace espcontrol::heating_schedule;
+          set_day_schedule(0, id(heating_schedule_monday).state);
+          set_day_schedule(1, id(heating_schedule_tuesday).state);
+          set_day_schedule(2, id(heating_schedule_wednesday).state);
+          set_day_schedule(3, id(heating_schedule_thursday).state);
+          set_day_schedule(4, id(heating_schedule_friday).state);
+          set_day_schedule(5, id(heating_schedule_saturday).state);
+          set_day_schedule(6, id(heating_schedule_sunday).state);
+      - script.execute: heating_schedule_check
+
+script:
+  # Discard the last-applied period marker and re-check immediately. Used
+  # whenever the enable switch turns on or a day's schedule text changes, so
+  # an edit to the currently active period takes effect right away instead
+  # of waiting for the next period boundary.
+  - id: heating_schedule_force_check
+    mode: restart
+    then:
+      - lambda: |-
+          auto &state = espcontrol::heating_schedule::heating_schedule_state();
+          state.last_applied_weekday = -1;
+          state.last_applied_minute = -1;
+      - script.execute: heating_schedule_check
+
+  # Apply the schedule's currently active period to the boiler climate
+  # entity, but only when it differs from the period already applied - so a
+  # user adjusting the target mid-period via Home Assistant or the local
+  # climate card is left alone until the next scheduled change.
+  - id: heating_schedule_check
+    mode: restart
+    then:
+      - lambda: |-
+          if (!id(heating_schedule_enabled).state) return;
+          auto now = panel_time_or_fallback(id(panel_time).now(), id(homeassistant_time).now());
+          if (!now.is_valid()) return;
+          using namespace espcontrol::heating_schedule;
+          int weekday = monday_first_weekday(now.day_of_week);
+          int minute_of_day = now.hour * 60 + now.minute;
+          auto &state = heating_schedule_state();
+          ActivePeriod active = find_active_period(state.days, weekday, minute_of_day);
+          if (!active.valid) return;
+          if (!schedule_period_changed(state.last_applied_weekday, state.last_applied_minute,
+                                       active.weekday, active.minute_of_day)) {
+            return;
+          }
+          state.last_applied_weekday = active.weekday;
+          state.last_applied_minute = active.minute_of_day;
+          auto call = id(ch_climate).make_call();
+          call.set_target_temperature(active.target_c);
+          call.perform();
+
+interval:
+  - interval: 60s
+    then:
+      - script.execute: heating_schedule_check

@@ -3,6 +3,7 @@
 #include "climate_subscription_policy.h"
 #include "climate_state_logic.h"
 #include "climate_target_logic.h"
+#include "heating_schedule.h"
 
 // Internal implementation detail for button_grid.h. Include button_grid.h from device YAML.
 
