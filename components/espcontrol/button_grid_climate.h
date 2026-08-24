@@ -197,6 +197,8 @@ struct ClimateControlModalUi {
   lv_obj_t *overlay = nullptr;
   lv_obj_t *panel = nullptr;
   lv_obj_t *back_btn = nullptr;
+  lv_obj_t *schedule_btn = nullptr;
+  lv_obj_t *schedule_icon_lbl = nullptr;
   lv_obj_t *tab_row = nullptr;
   lv_obj_t *temperature_tab = nullptr;
   lv_obj_t *mode_tab = nullptr;
@@ -1956,6 +1958,62 @@ inline void register_climate_info_provider(ClimateInfoProvider provider) {
   climate_info_providers().push_back(std::move(provider));
 }
 
+// ── Local climate schedule toggle ──────────────────────────────────────
+//
+// Lets device-specific code (e.g. an on-device weekly heating schedule)
+// contribute a header toggle button to one specific local climate's modal,
+// keyed by that climate's object_id - the modal shows it only for climates
+// that actually register one, and stays ignorant of what backs it (a
+// switch, a script, anything with an on/off state).
+
+struct ClimateScheduleToggle {
+  std::string climate_id;
+  std::function<bool()> is_on;
+  std::function<void(bool)> set_on;
+};
+
+inline std::vector<ClimateScheduleToggle> &climate_schedule_toggle_registry() {
+  static std::vector<ClimateScheduleToggle> toggles;
+  return toggles;
+}
+
+inline void register_climate_schedule_toggle(
+    const std::string &climate_id,
+    std::function<bool()> is_on,
+    std::function<void(bool)> set_on) {
+  if (climate_id.empty()) return;
+  ClimateScheduleToggle toggle;
+  toggle.climate_id = climate_id;
+  toggle.is_on = std::move(is_on);
+  toggle.set_on = std::move(set_on);
+  auto &reg = climate_schedule_toggle_registry();
+  for (auto &existing : reg) {
+    if (existing.climate_id == climate_id) {
+      existing = toggle;
+      return;
+    }
+  }
+  reg.push_back(toggle);
+}
+
+inline ClimateScheduleToggle *find_climate_schedule_toggle(const std::string &climate_id) {
+  if (climate_id.empty()) return nullptr;
+  for (auto &toggle : climate_schedule_toggle_registry()) {
+    if (toggle.climate_id == climate_id) return &toggle;
+  }
+  return nullptr;
+}
+
+inline void climate_apply_schedule_button_state(ClimateControlCtx *ctx) {
+  ClimateControlModalUi &ui = climate_control_modal_ui();
+  if (!ctx || !ui.schedule_btn || !ui.schedule_icon_lbl) return;
+  ClimateScheduleToggle *toggle = find_climate_schedule_toggle(ctx->entity_id);
+  if (!toggle || !toggle->is_on) return;
+  bool on = toggle->is_on();
+  lv_obj_set_style_text_color(ui.schedule_icon_lbl,
+    lv_color_hex(on ? ctx->accent_color : DARK_TEXT_PRIMARY), LV_PART_MAIN);
+}
+
 inline void climate_info_panel_add_row(lv_obj_t *parent, const std::string &label,
                                        const std::string &value, const lv_font_t *font) {
   lv_obj_t *row = lv_label_create(parent);
@@ -2272,6 +2330,7 @@ inline void climate_control_layout_modal(ClimateControlCtx *ctx) {
   control_modal_apply_panel_layout(ui.overlay, ui.panel, layout,
     control_modal_card_radius(ctx->btn));
   control_modal_apply_back_button_layout(ui.back_btn, layout);
+  if (ui.schedule_btn) control_modal_style_chrome_button(ui.schedule_btn, layout, true);
   ClimateControlVisibleTabs visible_tabs = climate_control_visible_tabs(ctx);
   ControlModalTabLayout tabs_layout = climate_control_calc_tab_layout(ctx, layout);
   int tab_count = tabs_layout.tab_count;
@@ -2460,6 +2519,7 @@ inline void climate_control_layout_modal(ClimateControlCtx *ctx) {
   if (ui.range_toggle) lv_obj_move_foreground(ui.range_toggle);
   if (ui.tab_row) lv_obj_move_foreground(ui.tab_row);
   lv_obj_move_foreground(ui.back_btn);
+  if (ui.schedule_btn) lv_obj_move_foreground(ui.schedule_btn);
   if (ui.mode_btn) lv_obj_move_foreground(ui.mode_btn);
   if (ui.menu_view) lv_obj_move_foreground(ui.menu_view);
   if (ui.menu_close_btn) lv_obj_move_foreground(ui.menu_close_btn);
@@ -2551,6 +2611,24 @@ inline void climate_control_open_modal(ClimateControlCtx *ctx) {
   ui.info_tab = climate_control_create_tab_button(
     ui.tab_row, find_icon("Information Outline"), ctx->icon_font,
     ClimateControlTab::INFO);
+
+  if (ctx->is_local && find_climate_schedule_toggle(ctx->entity_id)) {
+    ui.schedule_btn = control_modal_create_round_button(ui.panel, 32, find_icon("Timer"),
+      ctx->icon_font, DARK_BORDER, SECONDARY_GREY, ctx->width_compensation_percent);
+    if (ui.schedule_btn) {
+      control_modal_style_chrome_button(ui.schedule_btn, shell.layout, true);
+      ui.schedule_icon_lbl = lv_obj_get_child(ui.schedule_btn, 0);
+      lv_obj_add_event_cb(ui.schedule_btn, [](lv_event_t *) {
+        ClimateControlModalUi &ui = climate_control_modal_ui();
+        if (!ui.active) return;
+        ClimateScheduleToggle *toggle = find_climate_schedule_toggle(ui.active->entity_id);
+        if (!toggle || !toggle->is_on || !toggle->set_on) return;
+        toggle->set_on(!toggle->is_on());
+        climate_apply_schedule_button_state(ui.active);
+      }, LV_EVENT_CLICKED, nullptr);
+      climate_apply_schedule_button_state(ctx);
+    }
+  }
 
   ui.menu_view = lv_obj_create(ui.panel);
   lv_obj_set_style_bg_opa(ui.menu_view, LV_OPA_TRANSP, LV_PART_MAIN);

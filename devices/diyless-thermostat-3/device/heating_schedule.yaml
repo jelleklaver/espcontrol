@@ -153,6 +153,19 @@ esphome:
           set_day_schedule(4, id(heating_schedule_friday).state);
           set_day_schedule(5, id(heating_schedule_saturday).state);
           set_day_schedule(6, id(heating_schedule_sunday).state);
+      # Contributes a header toggle button to ch_climate's local climate card
+      # (see register_climate_schedule_toggle in button_grid_climate.h) so the
+      # schedule can be flipped on/off from the card itself, not just this
+      # switch entity.
+      - lambda: |-
+          char oid_buf[128];
+          register_climate_schedule_toggle(
+            id(ch_climate).get_object_id_to(oid_buf).c_str(),
+            []() { return id(heating_schedule_enabled).state; },
+            [](bool on) {
+              if (on) id(heating_schedule_enabled).turn_on();
+              else id(heating_schedule_enabled).turn_off();
+            });
       - script.execute: heating_schedule_check
 
 script:
