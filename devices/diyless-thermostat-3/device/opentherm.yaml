@@ -6,7 +6,72 @@
 # via its Climate/Switch/Sensor card types, configured from the web UI like
 # any other Home Assistant entity. The PID loop's current temperature comes
 # from the board's built-in AHT20 sensor.
+#
+# The PID gains below are only first-boot defaults (estimated for radiators
+# from a winter of on/off thermostat history: integral time ~4 hours to suit
+# the house's slow response): Home Assistant can replace them at runtime via the
+# set_heating_pid_parameters action, and the device restores the last values
+# it was given on every boot.
 # =============================================================================
+
+substitutions:
+  heating_pid_default_kp: "0.3"
+  heating_pid_default_ki: "0.00002"
+  heating_pid_default_kd: "0"
+
+globals:
+  - id: heating_pid_kp
+    type: float
+    restore_value: true
+    initial_value: '${heating_pid_default_kp}'
+  - id: heating_pid_ki
+    type: float
+    restore_value: true
+    initial_value: '${heating_pid_default_ki}'
+  - id: heating_pid_kd
+    type: float
+    restore_value: true
+    initial_value: '${heating_pid_default_kd}'
+
+api:
+  actions:
+    - action: set_heating_pid_parameters
+      variables:
+        kp: float
+        ki: float
+        kd: float
+      then:
+        - if:
+            condition:
+              lambda: |-
+                return std::isfinite(kp) && std::isfinite(ki) && std::isfinite(kd) &&
+                       kp >= 0 && ki >= 0 && kd >= 0;
+            then:
+              - globals.set:
+                  id: heating_pid_kp
+                  value: !lambda 'return kp;'
+              - globals.set:
+                  id: heating_pid_ki
+                  value: !lambda 'return ki;'
+              - globals.set:
+                  id: heating_pid_kd
+                  value: !lambda 'return kd;'
+              - script.execute: apply_heating_pid_parameters
+            else:
+              - lambda: 'ESP_LOGW("heating_pid", "Rejected PID parameters kp=%g ki=%g kd=%g: must be finite and >= 0", kp, ki, kd);'
+
+script:
+  # Pushes the stored gains into the running PID loop. The controller keeps
+  # its integral already scaled by ki, so changing gains never makes the
+  # boiler setpoint jump.
+  - id: apply_heating_pid_parameters
+    then:
+      - climate.pid.set_control_parameters:
+          id: ch_climate
+          kp: !lambda 'return id(heating_pid_kp);'
+          ki: !lambda 'return id(heating_pid_ki);'
+          kd: !lambda 'return id(heating_pid_kd);'
+      - lambda: 'ESP_LOGI("heating_pid", "Applied PID parameters kp=%g ki=%g kd=%g", id(heating_pid_kp), id(heating_pid_ki), id(heating_pid_kd));'
 
 sensor:
   - platform: aht10
@@ -68,7 +133,7 @@ sensor:
     name: "Heating PID Result"
     climate_id: ch_climate
     type: RESULT
-    internal: true
+    entity_category: diagnostic
   - platform: pid
     id: pid_error
     name: "Heating PID Error"
@@ -80,13 +145,13 @@ sensor:
     name: "Heating PID Proportional"
     climate_id: ch_climate
     type: PROPORTIONAL
-    internal: true
+    entity_category: diagnostic
   - platform: pid
     id: pid_integral
     name: "Heating PID Integral"
     climate_id: ch_climate
     type: INTEGRAL
-    internal: true
+    entity_category: diagnostic
   - platform: pid
     id: pid_derivative
     name: "Heating PID Derivative"
@@ -185,9 +250,9 @@ climate:
         target_temperature: 0.5
         current_temperature: 0.1
     control_parameters:
-      kp: 0.77
-      ki: 0.0005
-      kd: 0
+      kp: ${heating_pid_default_kp}
+      ki: ${heating_pid_default_ki}
+      kd: ${heating_pid_default_kd}
       output_averaging_samples: 10
     deadband_parameters:
       threshold_high: 0.5
@@ -235,4 +300,12 @@ esphome:
               rows.push_back({"PID P", fmt(id(pid_proportional).state, 3)});
               rows.push_back({"PID I", fmt(id(pid_integral).state, 3)});
               rows.push_back({"PID D", fmt(id(pid_derivative).state, 3)});
+              rows.push_back({"PID Kp", fmt(id(heating_pid_kp), 3)});
+              rows.push_back({"PID Ki", fmt(id(heating_pid_ki), 6)});
+              rows.push_back({"PID Kd", fmt(id(heating_pid_kd), 3)});
             });
+    # Runs after globals have restored their saved values, so the PID loop
+    # picks up the gains last set from Home Assistant instead of the defaults.
+    - priority: -100
+      then:
+        - script.execute: apply_heating_pid_parameters
