@@ -23,6 +23,12 @@ constexpr float WARMUP_RATE_MIN_C_PER_H = 0.2f;
 constexpr float WARMUP_RATE_MAX_C_PER_H = 5.0f;
 // Share of each observed warm-up blended into the learned rate.
 constexpr float WARMUP_RATE_LEARNING_WEIGHT = 0.3f;
+// Warm-ups slow down as more heat leaks outside. The learned rate refers to
+// WARMUP_REFERENCE_DIFF_C between indoors and outdoors and scales linearly
+// to zero at WARMUP_FULL_POWER_LIFT_C, the difference full heating can just
+// hold (both estimated from a winter of this house's on/off history).
+constexpr float WARMUP_REFERENCE_DIFF_C = 12.0f;
+constexpr float WARMUP_FULL_POWER_LIFT_C = 48.0f;
 
 struct SchedulePeriod {
   int minute_of_day = -1;
@@ -187,13 +193,24 @@ inline int preheat_lead_minutes(float current_c, float target_c, float rate_c_pe
   return std::min(lead, PREHEAT_MAX_LEAD_MINUTES);
 }
 
+// How much faster (>1) or slower (<1) a warm-up runs at the given indoor and
+// outdoor temperatures than at the reference difference; 1 when either is
+// unknown.
+inline float warmup_outdoor_factor(float indoor_c, float outdoor_c) {
+  if (!std::isfinite(indoor_c) || !std::isfinite(outdoor_c)) return 1.0f;
+  float diff_c = std::clamp(indoor_c - outdoor_c, 0.0f, WARMUP_FULL_POWER_LIFT_C - 8.0f);
+  return (WARMUP_FULL_POWER_LIFT_C - diff_c) / (WARMUP_FULL_POWER_LIFT_C - WARMUP_REFERENCE_DIFF_C);
+}
+
 // Picks the period to apply now. Schedule times mean "warm by": once the
 // next, warmer period is within its warm-up lead time it is applied early;
 // otherwise the currently active period applies. Cooler periods are never
 // anticipated.
 inline ActivePeriod select_scheduled_period(const DaySchedule (&days)[DAYS_PER_WEEK],
                                             int weekday, int minute_of_day,
-                                            float current_c, float rate_c_per_h) {
+                                            float current_c, float outdoor_c,
+                                            float reference_rate_c_per_h) {
+  const float rate_c_per_h = reference_rate_c_per_h * warmup_outdoor_factor(current_c, outdoor_c);
   ActivePeriod active = find_active_period(days, weekday, minute_of_day);
   UpcomingPeriod next = find_next_period(days, weekday, minute_of_day);
   if (!next.valid || (active.valid && next.target_c <= active.target_c)) return active;
@@ -201,12 +218,14 @@ inline ActivePeriod select_scheduled_period(const DaySchedule (&days)[DAYS_PER_W
   return ActivePeriod{true, next.target_c, next.weekday, next.minute_of_day, true};
 }
 
-// Blends one observed warm-up (`rise_c` degrees in `elapsed_minutes`) into
-// the learned rate. Warm-ups too small or short to measure reliably leave
-// the rate unchanged.
-inline float learned_warmup_rate(float current_rate, float rise_c, float elapsed_minutes) {
-  if (rise_c < 0.5f || elapsed_minutes < 15.0f) return current_rate;
-  float observed = std::clamp(rise_c / (elapsed_minutes / 60.0f),
+// Blends one observed warm-up (`rise_c` degrees in `elapsed_minutes`, run
+// at `outdoor_factor` from warmup_outdoor_factor) into the learned reference
+// rate. Warm-ups too small or short to measure reliably leave the rate
+// unchanged.
+inline float learned_warmup_rate(float current_rate, float rise_c, float elapsed_minutes,
+                                 float outdoor_factor) {
+  if (rise_c < 0.5f || elapsed_minutes < 15.0f || !(outdoor_factor > 0)) return current_rate;
+  float observed = std::clamp(rise_c / (elapsed_minutes / 60.0f) / outdoor_factor,
                               WARMUP_RATE_MIN_C_PER_H, WARMUP_RATE_MAX_C_PER_H);
   return current_rate + WARMUP_RATE_LEARNING_WEIGHT * (observed - current_rate);
 }

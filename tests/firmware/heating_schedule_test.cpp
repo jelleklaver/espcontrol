@@ -22,6 +22,7 @@ int main() {
   using espcontrol::heating_schedule::learned_warmup_rate;
   using espcontrol::heating_schedule::preheat_lead_minutes;
   using espcontrol::heating_schedule::select_scheduled_period;
+  using espcontrol::heating_schedule::warmup_outdoor_factor;
   using espcontrol::heating_schedule::monday_first_weekday;
   using espcontrol::heating_schedule::parse_day_schedule;
   using espcontrol::heating_schedule::parse_period_token;
@@ -178,28 +179,44 @@ int main() {
   {
     DaySchedule days[DAYS_PER_WEEK] = {};
     days[MONDAY] = parse_day_schedule("17:00=19;21:30=16");
-    ActivePeriod period = select_scheduled_period(days, MONDAY, 13 * 60 + 59, 16.0f, 1.0f);
+    ActivePeriod period = select_scheduled_period(days, MONDAY, 13 * 60 + 59, 16.0f, NAN, 1.0f);
     assert(period.target_c == 16.0f && !period.early);
-    period = select_scheduled_period(days, MONDAY, 14 * 60, 16.0f, 1.0f);
+    period = select_scheduled_period(days, MONDAY, 14 * 60, 16.0f, NAN, 1.0f);
     assert(period.target_c == 19.0f && period.early);
     assert(period.weekday == MONDAY && period.minute_of_day == 17 * 60);
     // The scheduled start of an anticipated period is the same period.
-    ActivePeriod at_start = select_scheduled_period(days, MONDAY, 17 * 60, 19.0f, 1.0f);
+    ActivePeriod at_start = select_scheduled_period(days, MONDAY, 17 * 60, 19.0f, NAN, 1.0f);
     assert(!schedule_period_changed(period.weekday, period.minute_of_day,
                                     at_start.weekday, at_start.minute_of_day));
     // Cooler periods are never anticipated.
-    period = select_scheduled_period(days, MONDAY, 21 * 60, 19.0f, 1.0f);
+    period = select_scheduled_period(days, MONDAY, 21 * 60, 19.0f, NAN, 1.0f);
     assert(period.target_c == 19.0f && !period.early);
     // Unknown room temperature falls back to plain schedule times.
-    period = select_scheduled_period(days, MONDAY, 16 * 60, NAN, 1.0f);
+    period = select_scheduled_period(days, MONDAY, 16 * 60, NAN, NAN, 1.0f);
     assert(period.target_c == 16.0f && !period.early);
   }
 
+  // Outdoor correction: neutral at the reference difference or when
+  // unknown, slower when colder outside, faster when milder.
+  assert(warmup_outdoor_factor(16.0f, 4.0f) == 1.0f);
+  assert(warmup_outdoor_factor(16.0f, NAN) == 1.0f);
+  assert(warmup_outdoor_factor(16.0f, -8.0f) < 1.0f);
+  assert(warmup_outdoor_factor(16.0f, 12.0f) > 1.0f);
+  // A cold day therefore starts the same warm-up earlier.
+  {
+    DaySchedule days[DAYS_PER_WEEK] = {};
+    days[MONDAY] = parse_day_schedule("17:00=19;21:30=16");
+    assert(!select_scheduled_period(days, MONDAY, 13 * 60 + 45, 16.0f, 4.0f, 1.0f).early);
+    assert(select_scheduled_period(days, MONDAY, 13 * 60 + 45, 16.0f, -8.0f, 1.0f).early);
+  }
+
   // Learning blends observed warm-ups and ignores unmeasurable ones.
-  assert(learned_warmup_rate(1.0f, 3.0f, 90.0f) == 1.0f + 0.3f * (2.0f - 1.0f));
-  assert(learned_warmup_rate(1.0f, 0.3f, 60.0f) == 1.0f);
-  assert(learned_warmup_rate(1.0f, 3.0f, 10.0f) == 1.0f);
-  assert(learned_warmup_rate(1.0f, 3.0f, 15.0f) == 1.0f + 0.3f * (5.0f - 1.0f));
+  assert(learned_warmup_rate(1.0f, 3.0f, 90.0f, 1.0f) == 1.0f + 0.3f * (2.0f - 1.0f));
+  assert(learned_warmup_rate(1.0f, 0.3f, 60.0f, 1.0f) == 1.0f);
+  assert(learned_warmup_rate(1.0f, 3.0f, 10.0f, 1.0f) == 1.0f);
+  assert(learned_warmup_rate(1.0f, 3.0f, 15.0f, 1.0f) == 1.0f + 0.3f * (5.0f - 1.0f));
+  // A slow warm-up on a cold day is normalised back to the reference.
+  assert(learned_warmup_rate(1.0f, 1.0f, 120.0f, 0.5f) == 1.0f);
 
   return 0;
 }

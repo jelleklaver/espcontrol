@@ -10,7 +10,9 @@
 #
 # Times mean "warm by": a warmer period is applied early by the time the room
 # needs to warm up at the learned "Heating Warm-up Rate", which each
-# anticipated warm-up refines.
+# anticipated warm-up refines. That rate refers to a 12 C indoor-outdoor
+# difference and is scaled to the current outdoor temperature from the
+# clock bar's Outdoor Temp entity (or the boiler's outdoor sensor).
 # =============================================================================
 
 globals:
@@ -28,9 +30,13 @@ globals:
   - id: heating_preheat_target_c
     type: float
     initial_value: 'NAN'
+  - id: heating_preheat_outdoor_factor
+    type: float
+    initial_value: '1.0'
 
 number:
   - platform: template
+    # Learned warm-up speed at a 12 C indoor-outdoor difference.
     name: "Heating Warm-up Rate"
     id: heating_warmup_rate
     optimistic: true
@@ -235,8 +241,10 @@ script:
           int minute_of_day = now.hour * 60 + now.minute;
           auto &state = heating_schedule_state();
           const float room_c = id(ch_climate).current_temperature;
+          const float outdoor_c = std::isnan(id(outdoor_temp)) ? id(outside_temperature).state
+                                                               : id(outdoor_temp);
           ActivePeriod active = select_scheduled_period(state.days, weekday, minute_of_day,
-                                                        room_c, id(heating_warmup_rate).state);
+                                                        room_c, outdoor_c, id(heating_warmup_rate).state);
           if (!active.valid) return;
           if (!schedule_period_changed(state.last_applied_weekday, state.last_applied_minute,
                                        active.weekday, active.minute_of_day)) {
@@ -249,8 +257,10 @@ script:
             id(heating_preheat_start_ms) = millis();
             id(heating_preheat_start_c) = room_c;
             id(heating_preheat_target_c) = active.target_c;
-            ESP_LOGI("heating_schedule", "Warming up early: %.1f -> %.1f C at %.2f C/h",
-                     room_c, active.target_c, id(heating_warmup_rate).state);
+            id(heating_preheat_outdoor_factor) = warmup_outdoor_factor(room_c, outdoor_c);
+            ESP_LOGI("heating_schedule", "Warming up early: %.1f -> %.1f C at %.2f C/h (outside %.1f C)",
+                     room_c, active.target_c,
+                     id(heating_warmup_rate).state * id(heating_preheat_outdoor_factor), outdoor_c);
           }
           auto call = id(ch_climate).make_call();
           call.set_target_temperature(active.target_c);
@@ -275,7 +285,8 @@ script:
           if (std::isnan(room_c) || room_c < target_c - 0.1f) return;
           id(heating_preheat_active) = false;
           const float rate = espcontrol::heating_schedule::learned_warmup_rate(
-              id(heating_warmup_rate).state, target_c - id(heating_preheat_start_c), elapsed_min);
+              id(heating_warmup_rate).state, target_c - id(heating_preheat_start_c), elapsed_min,
+              id(heating_preheat_outdoor_factor));
           ESP_LOGI("heating_schedule", "Warm-up took %.0f min; warm-up rate %.2f -> %.2f C/h",
                    elapsed_min, id(heating_warmup_rate).state, rate);
           auto call = id(heating_warmup_rate).make_call();
