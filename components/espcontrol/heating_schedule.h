@@ -16,6 +16,13 @@ namespace espcontrol::heating_schedule {
 
 constexpr int MAX_PERIODS_PER_DAY = 4;
 constexpr int DAYS_PER_WEEK = 7;
+constexpr int MINUTES_PER_DAY = 24 * 60;
+// Anticipation never starts a warm-up more than this far ahead of its period.
+constexpr int PREHEAT_MAX_LEAD_MINUTES = 4 * 60;
+constexpr float WARMUP_RATE_MIN_C_PER_H = 0.2f;
+constexpr float WARMUP_RATE_MAX_C_PER_H = 5.0f;
+// Share of each observed warm-up blended into the learned rate.
+constexpr float WARMUP_RATE_LEARNING_WEIGHT = 0.3f;
 
 struct SchedulePeriod {
   int minute_of_day = -1;
@@ -35,6 +42,16 @@ struct ActivePeriod {
   // newly started one without comparing floating-point temperatures.
   int weekday = -1;
   int minute_of_day = -1;
+  // True when this period is applied ahead of its start time to warm up.
+  bool early = false;
+};
+
+struct UpcomingPeriod {
+  bool valid = false;
+  float target_c = NAN;
+  int weekday = -1;
+  int minute_of_day = -1;
+  int minutes_until = -1;
 };
 
 struct HeatingScheduleState {
@@ -140,6 +157,58 @@ inline ActivePeriod find_active_period(const DaySchedule (&days)[DAYS_PER_WEEK],
     }
   }
   return ActivePeriod{};
+}
+
+// Finds the first period that starts strictly after `minute_of_day` on
+// `weekday`, looking ahead up to a full week.
+inline UpcomingPeriod find_next_period(const DaySchedule (&days)[DAYS_PER_WEEK],
+                                       int weekday, int minute_of_day) {
+  for (int ahead = 0; ahead <= DAYS_PER_WEEK; ahead++) {
+    int day = (weekday + ahead) % DAYS_PER_WEEK;
+    const DaySchedule &schedule = days[day];
+    for (int i = 0; i < schedule.count; i++) {
+      int minutes_until = ahead * MINUTES_PER_DAY + schedule.periods[i].minute_of_day - minute_of_day;
+      if (minutes_until <= 0) continue;
+      return UpcomingPeriod{true, schedule.periods[i].target_c, day,
+                            schedule.periods[i].minute_of_day, minutes_until};
+    }
+  }
+  return UpcomingPeriod{};
+}
+
+// Minutes needed to warm the room from `current_c` to `target_c` at
+// `rate_c_per_h`, capped at PREHEAT_MAX_LEAD_MINUTES; 0 when no warm-up is
+// needed or the inputs are unknown.
+inline int preheat_lead_minutes(float current_c, float target_c, float rate_c_per_h) {
+  if (!std::isfinite(current_c) || !std::isfinite(target_c) || !(rate_c_per_h > 0)) return 0;
+  float rise_c = target_c - current_c;
+  if (rise_c <= 0) return 0;
+  int lead = static_cast<int>(std::ceil(rise_c / rate_c_per_h * 60.0f));
+  return std::min(lead, PREHEAT_MAX_LEAD_MINUTES);
+}
+
+// Picks the period to apply now. Schedule times mean "warm by": once the
+// next, warmer period is within its warm-up lead time it is applied early;
+// otherwise the currently active period applies. Cooler periods are never
+// anticipated.
+inline ActivePeriod select_scheduled_period(const DaySchedule (&days)[DAYS_PER_WEEK],
+                                            int weekday, int minute_of_day,
+                                            float current_c, float rate_c_per_h) {
+  ActivePeriod active = find_active_period(days, weekday, minute_of_day);
+  UpcomingPeriod next = find_next_period(days, weekday, minute_of_day);
+  if (!next.valid || (active.valid && next.target_c <= active.target_c)) return active;
+  if (next.minutes_until > preheat_lead_minutes(current_c, next.target_c, rate_c_per_h)) return active;
+  return ActivePeriod{true, next.target_c, next.weekday, next.minute_of_day, true};
+}
+
+// Blends one observed warm-up (`rise_c` degrees in `elapsed_minutes`) into
+// the learned rate. Warm-ups too small or short to measure reliably leave
+// the rate unchanged.
+inline float learned_warmup_rate(float current_rate, float rise_c, float elapsed_minutes) {
+  if (rise_c < 0.5f || elapsed_minutes < 15.0f) return current_rate;
+  float observed = std::clamp(rise_c / (elapsed_minutes / 60.0f),
+                              WARMUP_RATE_MIN_C_PER_H, WARMUP_RATE_MAX_C_PER_H);
+  return current_rate + WARMUP_RATE_LEARNING_WEIGHT * (observed - current_rate);
 }
 
 // True when `active` names a different period than the one last applied, so

@@ -7,6 +7,7 @@ using espcontrol::heating_schedule::DAYS_PER_WEEK;
 using espcontrol::heating_schedule::DaySchedule;
 using espcontrol::heating_schedule::MAX_PERIODS_PER_DAY;
 using espcontrol::heating_schedule::SchedulePeriod;
+using espcontrol::heating_schedule::UpcomingPeriod;
 
 namespace {
 
@@ -17,6 +18,10 @@ const int SUNDAY = 6;
 
 int main() {
   using espcontrol::heating_schedule::find_active_period;
+  using espcontrol::heating_schedule::find_next_period;
+  using espcontrol::heating_schedule::learned_warmup_rate;
+  using espcontrol::heating_schedule::preheat_lead_minutes;
+  using espcontrol::heating_schedule::select_scheduled_period;
   using espcontrol::heating_schedule::monday_first_weekday;
   using espcontrol::heating_schedule::parse_day_schedule;
   using espcontrol::heating_schedule::parse_period_token;
@@ -146,6 +151,55 @@ int main() {
   assert(!schedule_period_changed(MONDAY, 6 * 60 + 30, MONDAY, 6 * 60 + 30));
   assert(schedule_period_changed(MONDAY, 6 * 60 + 30, MONDAY, 17 * 60));
   assert(schedule_period_changed(SUNDAY, 22 * 60, MONDAY, 22 * 60));
+
+  // Next period: later today, then wrapping to the next configured day.
+  {
+    DaySchedule days[DAYS_PER_WEEK] = {};
+    days[MONDAY] = parse_day_schedule("17:00=19;21:30=16");
+    UpcomingPeriod next = find_next_period(days, MONDAY, 15 * 60);
+    assert(next.valid && next.minute_of_day == 17 * 60 && next.minutes_until == 120);
+    next = find_next_period(days, MONDAY, 17 * 60);  // strictly after now
+    assert(next.minute_of_day == 21 * 60 + 30);
+    next = find_next_period(days, SUNDAY, 23 * 60);
+    assert(next.weekday == MONDAY && next.minutes_until == 18 * 60);
+    DaySchedule empty[DAYS_PER_WEEK] = {};
+    assert(!find_next_period(empty, MONDAY, 0).valid);
+  }
+
+  // Lead time: rise / rate, capped, and zero when already warm or unknown.
+  assert(preheat_lead_minutes(16.0f, 19.0f, 1.0f) == 180);
+  assert(preheat_lead_minutes(16.0f, 19.0f, 2.0f) == 90);
+  assert(preheat_lead_minutes(10.0f, 19.0f, 1.0f) == 240);
+  assert(preheat_lead_minutes(19.5f, 19.0f, 1.0f) == 0);
+  assert(preheat_lead_minutes(NAN, 19.0f, 1.0f) == 0);
+  assert(preheat_lead_minutes(16.0f, 19.0f, 0.0f) == 0);
+
+  // Anticipation applies a warmer period early once inside its lead time.
+  {
+    DaySchedule days[DAYS_PER_WEEK] = {};
+    days[MONDAY] = parse_day_schedule("17:00=19;21:30=16");
+    ActivePeriod period = select_scheduled_period(days, MONDAY, 13 * 60 + 59, 16.0f, 1.0f);
+    assert(period.target_c == 16.0f && !period.early);
+    period = select_scheduled_period(days, MONDAY, 14 * 60, 16.0f, 1.0f);
+    assert(period.target_c == 19.0f && period.early);
+    assert(period.weekday == MONDAY && period.minute_of_day == 17 * 60);
+    // The scheduled start of an anticipated period is the same period.
+    ActivePeriod at_start = select_scheduled_period(days, MONDAY, 17 * 60, 19.0f, 1.0f);
+    assert(!schedule_period_changed(period.weekday, period.minute_of_day,
+                                    at_start.weekday, at_start.minute_of_day));
+    // Cooler periods are never anticipated.
+    period = select_scheduled_period(days, MONDAY, 21 * 60, 19.0f, 1.0f);
+    assert(period.target_c == 19.0f && !period.early);
+    // Unknown room temperature falls back to plain schedule times.
+    period = select_scheduled_period(days, MONDAY, 16 * 60, NAN, 1.0f);
+    assert(period.target_c == 16.0f && !period.early);
+  }
+
+  // Learning blends observed warm-ups and ignores unmeasurable ones.
+  assert(learned_warmup_rate(1.0f, 3.0f, 90.0f) == 1.0f + 0.3f * (2.0f - 1.0f));
+  assert(learned_warmup_rate(1.0f, 0.3f, 60.0f) == 1.0f);
+  assert(learned_warmup_rate(1.0f, 3.0f, 10.0f) == 1.0f);
+  assert(learned_warmup_rate(1.0f, 3.0f, 15.0f) == 1.0f + 0.3f * (5.0f - 1.0f));
 
   return 0;
 }

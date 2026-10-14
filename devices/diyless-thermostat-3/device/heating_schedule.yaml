@@ -7,7 +7,42 @@
 # schedule state live in heating_schedule.h so the schedule keeps applying to
 # the boiler's climate entity even when Home Assistant is offline - the check
 # below only needs the panel's own time source.
+#
+# Times mean "warm by": a warmer period is applied early by the time the room
+# needs to warm up at the learned "Heating Warm-up Rate", which each
+# anticipated warm-up refines.
 # =============================================================================
+
+globals:
+  # Tracks the anticipated warm-up in progress so its actual rate can be
+  # learned once the room reaches the target.
+  - id: heating_preheat_active
+    type: bool
+    initial_value: 'false'
+  - id: heating_preheat_start_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: heating_preheat_start_c
+    type: float
+    initial_value: 'NAN'
+  - id: heating_preheat_target_c
+    type: float
+    initial_value: 'NAN'
+
+number:
+  - platform: template
+    name: "Heating Warm-up Rate"
+    id: heating_warmup_rate
+    optimistic: true
+    restore_value: true
+    initial_value: 1.0
+    min_value: 0.2
+    max_value: 5.0
+    step: 0.05
+    unit_of_measurement: "°C/h"
+    mode: box
+    entity_category: config
+    icon: "mdi:thermometer-chevron-up"
 
 switch:
   - platform: template
@@ -182,13 +217,15 @@ script:
           state.last_applied_minute = -1;
       - script.execute: heating_schedule_check
 
-  # Apply the schedule's currently active period to the boiler climate
-  # entity, but only when it differs from the period already applied - so a
-  # user adjusting the target mid-period via Home Assistant or the local
-  # climate card is left alone until the next scheduled change.
+  # Apply the schedule's period for now (or the next warmer one, once its
+  # warm-up should start) to the boiler climate entity, but only when it
+  # differs from the period already applied - so a user adjusting the target
+  # mid-period via Home Assistant or the local climate card is left alone
+  # until the next scheduled change.
   - id: heating_schedule_check
     mode: restart
     then:
+      - script.execute: heating_preheat_learn
       - lambda: |-
           if (!id(heating_schedule_enabled).state) return;
           auto now = panel_time_or_fallback(id(panel_time).now(), id(homeassistant_time).now());
@@ -197,7 +234,9 @@ script:
           int weekday = monday_first_weekday(now.day_of_week);
           int minute_of_day = now.hour * 60 + now.minute;
           auto &state = heating_schedule_state();
-          ActivePeriod active = find_active_period(state.days, weekday, minute_of_day);
+          const float room_c = id(ch_climate).current_temperature;
+          ActivePeriod active = select_scheduled_period(state.days, weekday, minute_of_day,
+                                                        room_c, id(heating_warmup_rate).state);
           if (!active.valid) return;
           if (!schedule_period_changed(state.last_applied_weekday, state.last_applied_minute,
                                        active.weekday, active.minute_of_day)) {
@@ -205,8 +244,42 @@ script:
           }
           state.last_applied_weekday = active.weekday;
           state.last_applied_minute = active.minute_of_day;
+          id(heating_preheat_active) = active.early;
+          if (active.early) {
+            id(heating_preheat_start_ms) = millis();
+            id(heating_preheat_start_c) = room_c;
+            id(heating_preheat_target_c) = active.target_c;
+            ESP_LOGI("heating_schedule", "Warming up early: %.1f -> %.1f C at %.2f C/h",
+                     room_c, active.target_c, id(heating_warmup_rate).state);
+          }
           auto call = id(ch_climate).make_call();
           call.set_target_temperature(active.target_c);
+          call.perform();
+
+  # Once an anticipated warm-up reaches its target, fold the rate it actually
+  # achieved into the learned warm-up rate. A manual target change or a
+  # warm-up that never finishes is discarded instead of learned from.
+  - id: heating_preheat_learn
+    mode: restart
+    then:
+      - lambda: |-
+          if (!id(heating_preheat_active)) return;
+          const float target_c = id(heating_preheat_target_c);
+          const float elapsed_min = (millis() - id(heating_preheat_start_ms)) / 60000.0f;
+          if (std::fabs(id(ch_climate).target_temperature - target_c) > 0.05f ||
+              elapsed_min > 2 * espcontrol::heating_schedule::PREHEAT_MAX_LEAD_MINUTES) {
+            id(heating_preheat_active) = false;
+            return;
+          }
+          const float room_c = id(ch_climate).current_temperature;
+          if (std::isnan(room_c) || room_c < target_c - 0.1f) return;
+          id(heating_preheat_active) = false;
+          const float rate = espcontrol::heating_schedule::learned_warmup_rate(
+              id(heating_warmup_rate).state, target_c - id(heating_preheat_start_c), elapsed_min);
+          ESP_LOGI("heating_schedule", "Warm-up took %.0f min; warm-up rate %.2f -> %.2f C/h",
+                   elapsed_min, id(heating_warmup_rate).state, rate);
+          auto call = id(heating_warmup_rate).make_call();
+          call.set_value(rate);
           call.perform();
 
 interval:
