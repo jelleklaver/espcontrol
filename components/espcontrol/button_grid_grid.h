@@ -2469,8 +2469,8 @@ inline bool configure_clock_bar_temperature_entities(
       NAN, NAN);
 
   for (size_t i = 0; i < clock_bar_entities.size(); i++) {
-    ha_subscribe_state(
-      clock_bar_entities[i],
+    ha_subscribe_attribute(
+      clock_bar_entities[i], ha_temperature_attribute(clock_bar_entities[i]),
       std::function<void(esphome::StringRef)>(
         [i, generation, main_page_obj, clock_bar_visible_callback,
          clock_bar_temperature_visible_callback](esphome::StringRef state) {
@@ -2560,12 +2560,8 @@ inline void grid_phase3(
   }
 
   if (outdoor_on && !outdoor_entity.empty()) {
-    // Weather entities report conditions as their state and carry the
-    // temperature as an attribute; sensors report it as their state.
-    const std::string outdoor_attribute =
-        outdoor_entity.rfind("weather.", 0) == 0 ? "temperature" : "";
-    ha_subscribe_attribute(
-      outdoor_entity, outdoor_attribute,
+    ha_subscribe_state(
+      outdoor_entity,
       std::function<void(esphome::StringRef)>(
         [indoor_on, outdoor_on, indoor_temp_ptr, outdoor_temp_ptr,
          main_page_obj, clock_bar_visible_callback](esphome::StringRef state) {

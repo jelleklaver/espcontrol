@@ -335,6 +335,12 @@ inline bool ha_subscribe_state(const std::string &entity_id,
       entity_id, std::string(), std::move(callback), scope, ha_callback_owner(), retain_latest);
 }
 
+// Weather entities report conditions as their state and carry the
+// temperature as an attribute; sensors report it as their state.
+inline std::string ha_temperature_attribute(const std::string &entity_id) {
+  return entity_id.rfind("weather.", 0) == 0 ? "temperature" : "";
+}
+
 inline bool ha_subscribe_attribute(const std::string &entity_id,
                                    const std::string &attribute,
                                    HomeAssistantStateCallback callback,

@@ -12,9 +12,10 @@
 # needs to warm up at the learned "Heating Warm-up Rate", which each
 # anticipated warm-up refines. That rate refers to a 12 C indoor-outdoor
 # difference and is scaled to the current outdoor temperature from the
-# clock bar's Outdoor Temp entity (a sensor or weather entity). Without one,
-# warm-ups assume the reference difference: the boiler's OpenTherm outdoor
-# reading is not used because it reports 0 when no sensor is fitted.
+# "Heating Outdoor Temperature Entity" setting (a sensor or weather entity).
+# Without one, warm-ups assume the reference difference: the boiler's
+# OpenTherm outdoor reading is not used because it reports 0 when no sensor
+# is fitted.
 # =============================================================================
 
 globals:
@@ -35,6 +36,8 @@ globals:
   - id: heating_preheat_outdoor_factor
     type: float
     initial_value: '1.0'
+  - id: heating_outdoor_temperature_source
+    type: HaTemperatureSource
 
 number:
   - platform: template
@@ -64,6 +67,22 @@ switch:
       - script.execute: heating_schedule_force_check
 
 text:
+  - platform: template
+    name: "Heating Outdoor Temperature Entity"
+    id: heating_outdoor_temperature_entity
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 100
+    mode: text
+    entity_category: config
+    icon: "mdi:sun-thermometer"
+    update_interval: never
+    on_value:
+      then:
+        - script.execute: heating_outdoor_temperature_refresh_subscription
+
   - platform: template
     name: "Heating Schedule: Monday"
     id: heating_schedule_monday
@@ -243,7 +262,9 @@ script:
           int minute_of_day = now.hour * 60 + now.minute;
           auto &state = heating_schedule_state();
           const float room_c = id(ch_climate).current_temperature;
-          const float outdoor_c = id(outdoor_temp);
+          // Weather entities update hourly; ignore readings older than 3 hours.
+          const auto &outdoor = id(heating_outdoor_temperature_source);
+          const float outdoor_c = ha_temperature_fresh(outdoor, 3 * 60 * 60 * 1000) ? outdoor.value : NAN;
           ActivePeriod active = select_scheduled_period(state.days, weekday, minute_of_day,
                                                         room_c, outdoor_c, id(heating_warmup_rate).state);
           if (!active.valid) return;
@@ -266,6 +287,15 @@ script:
           auto call = id(ch_climate).make_call();
           call.set_target_temperature(active.target_c);
           call.perform();
+
+  # Follows the configured outdoor temperature entity (see
+  # refresh_ha_temperature_source in heating_temperature_source.h).
+  - id: heating_outdoor_temperature_refresh_subscription
+    mode: restart
+    then:
+      - lambda: |-
+          refresh_ha_temperature_source(id(heating_outdoor_temperature_source),
+                                        id(heating_outdoor_temperature_entity).state, nullptr);
 
   # Once an anticipated warm-up reaches its target, fold the rate it actually
   # achieved into the learned warm-up rate. A manual target change or a
@@ -298,3 +328,6 @@ interval:
   - interval: 60s
     then:
       - script.execute: heating_schedule_check
+  - interval: 10s
+    then:
+      - script.execute: heating_outdoor_temperature_refresh_subscription

@@ -25,21 +25,11 @@ substitutions:
   heating_external_temperature_timeout_ms: "900000"  # 15 minutes
 
 globals:
-  - id: heating_external_temperature_value
-    type: float
-    initial_value: 'NAN'
-  - id: heating_external_temperature_ms
-    type: uint32_t
-    initial_value: '0'
+  - id: heating_room_temperature_source
+    type: HaTemperatureSource
   - id: heating_using_external_temperature
     type: bool
     initial_value: 'false'
-  - id: heating_external_temperature_subscribed_entity
-    type: std::string
-    initial_value: '""'
-  - id: heating_external_temperature_subscribed_generation
-    type: uint32_t
-    initial_value: '0'
   - id: heating_pid_kp
     type: float
     restore_value: true
@@ -98,47 +88,15 @@ api:
               - lambda: 'ESP_LOGW("heating_pid", "Rejected PID parameters kp=%g ki=%g kd=%g: must be finite and >= 0", kp, ki, kd);'
 
 script:
-  # Follows the configured room temperature entity: (re)subscribes when it,
-  # the Home Assistant connection or the subscription generation changes,
-  # and forgets the previous reading so a replaced sensor is never used.
+  # Follows the configured room temperature entity (see
+  # refresh_ha_temperature_source in heating_temperature_source.h).
   - id: heating_external_temperature_refresh_subscription
     mode: restart
     then:
       - lambda: |-
-          const std::string &configured = id(heating_external_temperature_entity).state;
-          const std::string entity = ha_api_state_connected() && configured.rfind("sensor.", 0) == 0
-              ? configured : std::string();
-          const uint32_t generation = entity.empty() ? 0 : ha_subscription_generation();
-          if (entity == id(heating_external_temperature_subscribed_entity) &&
-              generation == id(heating_external_temperature_subscribed_generation)) return;
-          void *const owner = &id(heating_external_temperature_subscribed_entity);
-          ha_release_callbacks_for_owner(owner);
-          if (entity != id(heating_external_temperature_subscribed_entity)) {
-            id(heating_external_temperature_value) = NAN;
-            id(heating_external_temperature_ms) = 0;
-          }
-          id(heating_external_temperature_subscribed_entity) = entity;
-          id(heating_external_temperature_subscribed_generation) = generation;
-          if (entity.empty()) return;
-          {
-            HaCallbackOwnerScope scope(owner);
-            const bool subscribed = ha_subscribe_state(entity,
-              std::function<void(esphome::StringRef)>([entity, generation](esphome::StringRef value) {
-                if (generation != ha_subscription_generation() ||
-                    entity != id(heating_external_temperature_subscribed_entity)) return;
-                auto temperature = parse_number<float>(string_ref_limited(value, 32));
-                if (!temperature.has_value() || std::isnan(*temperature)) return;
-                id(heating_external_temperature_value) = *temperature;
-                id(heating_external_temperature_ms) = millis();
-                id(heating_control_temperature).update();
-              }));
-            if (!subscribed) {
-              id(heating_external_temperature_subscribed_entity).clear();
-              id(heating_external_temperature_subscribed_generation) = 0;
-              return;
-            }
-          }
-          ha_reannounce_state_subscriptions();
+          refresh_ha_temperature_source(id(heating_room_temperature_source),
+                                        id(heating_external_temperature_entity).state,
+                                        []() { id(heating_control_temperature).update(); });
 
   # Pushes the stored gains into the running PID loop. The controller keeps
   # its integral already scaled by ki, so changing gains never makes the
@@ -167,9 +125,8 @@ sensor:
     update_interval: 60s
     lambda: |-
       const uint32_t timeout_ms = ${heating_external_temperature_timeout_ms};
-      bool external_fresh = !std::isnan(id(heating_external_temperature_value)) &&
-          id(heating_external_temperature_ms) != 0 &&
-          millis() - id(heating_external_temperature_ms) < timeout_ms;
+      const auto &room = id(heating_room_temperature_source);
+      bool external_fresh = ha_temperature_fresh(room, timeout_ms);
       if (external_fresh != id(heating_using_external_temperature)) {
         id(heating_using_external_temperature) = external_fresh;
         if (external_fresh) {
@@ -178,7 +135,7 @@ sensor:
           ESP_LOGW("heating_temp", "External room temperature unavailable; using built-in sensor");
         }
       }
-      return external_fresh ? id(heating_external_temperature_value) : id(builtin_sensor).state;
+      return external_fresh ? room.value : id(builtin_sensor).state;
 
   - platform: aht10
     variant: AHT20
