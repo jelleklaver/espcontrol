@@ -185,6 +185,7 @@ static const IconEntry ICON_ENTRIES[] = {
     {"Hot Tub",                            "\U000F0828"},
     {"Humidifier",                         "\U000F1099"},
     {"Humidity Alert",                     "\U000F1509"},
+    {"Information Outline",                "\U000F02FD"},
     {"Iron",                               "\U000F1824"},
     {"Kettle",                             "\U000F05FA"},
     {"Key",                                "\U000F030B"},

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "bundles": [
     {
-      "id": "9981739ed67148d483f696ffee07fa9d96fe8b1e0c5f65be70106862a33471f1",
-      "sha256": "9981739ed67148d483f696ffee07fa9d96fe8b1e0c5f65be70106862a33471f1",
-      "path": "bundles/9981739ed67148d483f696ffee07fa9d96fe8b1e0c5f65be70106862a33471f1/www.js",
+      "id": "0f870d46f08db1f63875c1f82b4075aa1a1d4bc24ac7f362a72479407e72ab20",
+      "sha256": "0f870d46f08db1f63875c1f82b4075aa1a1d4bc24ac7f362a72479407e72ab20",
+      "path": "bundles/0f870d46f08db1f63875c1f82b4075aa1a1d4bc24ac7f362a72479407e72ab20/www.js",
       "deviceProfiles": [
         "guition-esp32-p4-jc1060p470",
         "guition-esp32-p4-jc1060p470-v2",
@@ -14,7 +14,8 @@
         "guition-esp32-p4-jc8012p4a1-v2",
         "guition-esp32-p4-jc8012p4a1-v3",
         "esp32-p4-86",
-        "guition-esp32-s3-4848s040"
+        "guition-esp32-s3-4848s040",
+        "diyless-thermostat-3"
       ],
       "firmwareVersions": [
         "dev"
@@ -22,9 +23,9 @@
       "webAssetVersion": 2
     },
     {
-      "id": "9981739ed67148d483f696ffee07fa9d96fe8b1e0c5f65be70106862a33471f1",
-      "sha256": "9981739ed67148d483f696ffee07fa9d96fe8b1e0c5f65be70106862a33471f1",
-      "path": "bundles/9981739ed67148d483f696ffee07fa9d96fe8b1e0c5f65be70106862a33471f1/www.js",
+      "id": "0f870d46f08db1f63875c1f82b4075aa1a1d4bc24ac7f362a72479407e72ab20",
+      "sha256": "0f870d46f08db1f63875c1f82b4075aa1a1d4bc24ac7f362a72479407e72ab20",
+      "path": "bundles/0f870d46f08db1f63875c1f82b4075aa1a1d4bc24ac7f362a72479407e72ab20/www.js",
       "deviceProfiles": [
         "guition-esp32-p4-jc1060p470",
         "guition-esp32-p4-jc1060p470-v2",
@@ -34,7 +35,8 @@
         "guition-esp32-p4-jc8012p4a1-v2",
         "guition-esp32-p4-jc8012p4a1-v3",
         "esp32-p4-86",
-        "guition-esp32-s3-4848s040"
+        "guition-esp32-s3-4848s040",
+        "diyless-thermostat-3"
       ],
       "firmwareVersions": [
         "dev"
@@ -54,7 +56,8 @@
         "guition-esp32-p4-jc8012p4a1-v2",
         "guition-esp32-p4-jc8012p4a1-v3",
         "esp32-p4-86",
-        "guition-esp32-s3-4848s040"
+        "guition-esp32-s3-4848s040",
+        "diyless-thermostat-3"
       ],
       "firmwareVersions": [
         "v2.10.0",
@@ -78,7 +81,8 @@
         "guition-esp32-p4-jc8012p4a1-v2",
         "guition-esp32-p4-jc8012p4a1-v3",
         "esp32-p4-86",
-        "guition-esp32-s3-4848s040"
+        "guition-esp32-s3-4848s040",
+        "diyless-thermostat-3"
       ],
       "firmwareVersions": [
         "v2.10.0",

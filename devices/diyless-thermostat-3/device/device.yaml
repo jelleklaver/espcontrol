@@ -24,6 +24,11 @@ esp32:
   partitions: ../../../common/device/partitions_8mb_single_app.csv
   framework:
     type: esp-idf
+    advanced:
+      # The clock/cover-art display controller uses a deep ESPHome action chain.
+      # Keep enough headroom for rapid presence-driven sleep/wake transitions;
+      # the 8 KiB default can overflow loopTask on this profile.
+      loop_task_stack_size: 16384
     sdkconfig_options:
       # The S3 display stack leaves little internal RAM for HTTPS OTA checks.
       # Allocate mbedTLS buffers from PSRAM so firmware downloads can connect.
@@ -34,7 +39,18 @@ esp32:
       # Keep WiFi startup inside the internal-RAM budget after the RGB display
       # and LVGL buffers are initialized.
       CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM: "8"
+      # The static RX pool of eight requires an RX BA window of at most 16.
+      CONFIG_ESP_WIFI_RX_BA_WIN: "16"
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
+      # Route ordinary allocations larger than 4 KiB to PSRAM while keeping
+      # a 32 KiB internal reserve for DMA and cache-disabled operations.
+      CONFIG_SPIRAM_USE_MALLOC: "y"
+      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "4096"
+      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "32768"
+      # RGB bounce-buffer scan-out requires 64-byte data-cache lines. The
+      # default 32-byte lines can desynchronise PSRAM reads from panel DMA and
+      # leave the whole display vertically shifted until the next restart.
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
       # The RGB driver already restarts after a genuine DMA underflow. Restarting
       # on every VSYNC can instead shift the framebuffer by one bounce-buffer block.
       CONFIG_LCD_RGB_RESTART_IN_VSYNC: "n"
@@ -51,7 +67,7 @@ external_components:
       url: ${espcontrol_component_url}
       ref: ${espcontrol_component_ref}
       path: components
-    components: [espcontrol, web_server_idf, artwork_image, mipi_rgb]
+    components: [espcontrol, captive_portal, web_server_idf, artwork_image, mipi_rgb]
     refresh: 1s
   # OpenTherm boiler protocol driver from the board's original manufacturer.
   - source: github://diyless/esphome-opentherm-t3
@@ -59,6 +75,30 @@ external_components:
 
 espcontrol:
   id: espcontrol_app
+  panel_config:
+    device_profile: ${device_slug}
+    storage: card_images
+    button_order: button_order
+    button_on_color: button_on_color
+    buttons:
+      - config: button_1_config
+        subpage_chunks: [subpage_1_config, subpage_1_config_ext, subpage_1_config_ext_2, subpage_1_config_ext_3]
+      - config: button_2_config
+        subpage_chunks: [subpage_2_config, subpage_2_config_ext, subpage_2_config_ext_2, subpage_2_config_ext_3]
+      - config: button_3_config
+        subpage_chunks: [subpage_3_config, subpage_3_config_ext, subpage_3_config_ext_2, subpage_3_config_ext_3]
+      - config: button_4_config
+        subpage_chunks: [subpage_4_config, subpage_4_config_ext, subpage_4_config_ext_2, subpage_4_config_ext_3]
+      - config: button_5_config
+        subpage_chunks: [subpage_5_config, subpage_5_config_ext, subpage_5_config_ext_2, subpage_5_config_ext_3]
+      - config: button_6_config
+        subpage_chunks: [subpage_6_config, subpage_6_config_ext, subpage_6_config_ext_2, subpage_6_config_ext_3]
+      - config: button_7_config
+        subpage_chunks: [subpage_7_config, subpage_7_config_ext, subpage_7_config_ext_2, subpage_7_config_ext_3]
+      - config: button_8_config
+        subpage_chunks: [subpage_8_config, subpage_8_config_ext, subpage_8_config_ext_2, subpage_8_config_ext_3]
+      - config: button_9_config
+        subpage_chunks: [subpage_9_config, subpage_9_config_ext, subpage_9_config_ext_2, subpage_9_config_ext_3]
 # ---------------------------------------------------------------------------
 # ESPHome core (device name from substitutions)
 # ---------------------------------------------------------------------------
@@ -81,11 +121,10 @@ esphome:
   includes:
     - <esp_ota_ops.h>
   build_flags:
-    - "-DESPCONTROL_DISABLE_TODO=1"
     - "-DESPCONTROL_MAX_GRID_SLOTS=9"
+    - "-DESPCONTROL_DISABLE_WEATHER_FORECAST=1"
     - "-DESPCONTROL_LOW_HEAP_MEDIA_CONTROL=1"
     - "-DESPCONTROL_LOW_HEAP_COVER_ART=1"
-    - "-DESPCONTROL_DISABLE_WEATHER_FORECAST=1"
     # Keep C++ literals close to their functions on the S3 firmware image;
     # the modal code is large enough to otherwise trip Xtensa l32r range limits.
     - "-mtext-section-literals"
@@ -258,9 +297,7 @@ touchscreen:
       mirror_x: false
       mirror_y: false
     on_touch:
-      - script.execute: cover_art_pause_after_touch
-      - script.wait: cover_art_pause_after_touch
-      - script.execute: screensaver_wake
+      - script.execute: cover_art_handle_touch
 
 # ---------------------------------------------------------------------------
 # Display (4" 480x480 MIPI RGB panel)
@@ -282,6 +319,8 @@ lvgl:
   id: main_lvgl
   # Keep LVGL after WiFi and after the display driver.
   setup_priority: 230
+  # Keep the buffer small so WiFi and runtime display resources retain PSRAM
+  # headroom on the memory-constrained S3.
   buffer_size: 12%
   displays: my_display
   rotation: 0
@@ -311,6 +350,7 @@ script:
                         - lvgl.display.set_rotation: 270
                       else:
                         - lvgl.display.set_rotation: 0
+      - script.execute: camera_screensaver_request_image
 
 select:
   - platform: template
