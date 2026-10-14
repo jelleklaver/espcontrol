@@ -2560,8 +2560,12 @@ inline void grid_phase3(
   }
 
   if (outdoor_on && !outdoor_entity.empty()) {
-    ha_subscribe_state(
-      outdoor_entity,
+    // Weather entities report conditions as their state and carry the
+    // temperature as an attribute; sensors report it as their state.
+    const std::string outdoor_attribute =
+        outdoor_entity.rfind("weather.", 0) == 0 ? "temperature" : "";
+    ha_subscribe_attribute(
+      outdoor_entity, outdoor_attribute,
       std::function<void(esphome::StringRef)>(
         [indoor_on, outdoor_on, indoor_temp_ptr, outdoor_temp_ptr,
          main_page_obj, clock_bar_visible_callback](esphome::StringRef state) {

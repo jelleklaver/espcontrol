@@ -228,7 +228,7 @@ export function createButtonSettingsSelectionFeature(runtime: UiRuntimeState, cl
         var entityField: any = document.createElement("div");
         entityField.className = "sp-field";
         entityField.appendChild(fieldLabel("Entity", "sp-clockbar-temperature-entity"));
-        var entityInp: any = entityInput("sp-clockbar-temperature-entity", primaryClockBarTemperatureEntity(), "sensor.outdoor_temperature", ["sensor"]);
+        var entityInp: any = entityInput("sp-clockbar-temperature-entity", primaryClockBarTemperatureEntity(), "sensor.outdoor_temperature", ["sensor", "weather"]);
         entityField.appendChild(entityInp);
         panel.appendChild(entityField);
         var degreeToggle: any = toggleRow("Show Degree Symbol", "sp-clockbar-temperature-degree-symbol", state.temperatureDegreeSymbolOn);

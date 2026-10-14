@@ -12,7 +12,9 @@
 # needs to warm up at the learned "Heating Warm-up Rate", which each
 # anticipated warm-up refines. That rate refers to a 12 C indoor-outdoor
 # difference and is scaled to the current outdoor temperature from the
-# clock bar's Outdoor Temp entity (or the boiler's outdoor sensor).
+# clock bar's Outdoor Temp entity (a sensor or weather entity). Without one,
+# warm-ups assume the reference difference: the boiler's OpenTherm outdoor
+# reading is not used because it reports 0 when no sensor is fitted.
 # =============================================================================
 
 globals:
@@ -241,8 +243,7 @@ script:
           int minute_of_day = now.hour * 60 + now.minute;
           auto &state = heating_schedule_state();
           const float room_c = id(ch_climate).current_temperature;
-          const float outdoor_c = std::isnan(id(outdoor_temp)) ? id(outside_temperature).state
-                                                               : id(outdoor_temp);
+          const float outdoor_c = id(outdoor_temp);
           ActivePeriod active = select_scheduled_period(state.days, weekday, minute_of_day,
                                                         room_c, outdoor_c, id(heating_warmup_rate).state);
           if (!active.valid) return;
