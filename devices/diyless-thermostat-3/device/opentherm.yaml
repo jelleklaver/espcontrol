@@ -8,14 +8,14 @@
 # from the board's built-in AHT20 sensor.
 #
 # The PID gains below are only first-boot defaults (estimated for radiators
-# from a winter of on/off thermostat history: integral time ~4 hours to suit
+# from a winter of on/off thermostat history: integral time ~6 hours to suit
 # the house's slow response): Home Assistant can replace them at runtime via the
 # set_heating_pid_parameters action, and the device restores the last values
 # it was given on every boot.
 # =============================================================================
 
 substitutions:
-  heating_pid_default_kp: "0.3"
+  heating_pid_default_kp: "0.43"
   heating_pid_default_ki: "0.00002"
   heating_pid_default_kd: "0"
 
@@ -164,7 +164,10 @@ output:
     t_set:
       id: ch_setpoint
       min_value: 30
-      max_value: 80
+      # Matches the boiler's own max CH setpoint (Remeha P1): asking for more
+      # does nothing and only winds up the PID integral. The kp default is
+      # scaled to this 30-65 span, so rescale kp if this changes.
+      max_value: 65
       zero_means_zero: true
 
 switch:
