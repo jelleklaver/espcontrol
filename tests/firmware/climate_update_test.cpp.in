@@ -77,9 +77,9 @@ struct Request {
   std::vector<std::pair<const char *, std::string>> data;
 };
 std::vector<Request> requests;
-void climate_send_action(const std::string &entity, const char *service,
+void climate_send_action(ClimateControlCtx *ctx, const char *service,
                          const std::vector<std::pair<const char *, std::string>> &data) {
-  requests.push_back({entity, service, data});
+  requests.push_back({ctx->entity_id, service, data});
 }
 
 // Temperature/capability attributes share the subscription function but are

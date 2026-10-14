@@ -2012,7 +2012,7 @@ inline void climate_apply_schedule_button_state(ClimateControlCtx *ctx) {
   if (!toggle || !toggle->is_on) return;
   bool on = toggle->is_on();
   lv_obj_set_style_text_color(ui.schedule_icon_lbl,
-    lv_color_hex(on ? ctx->accent_color : DARK_TEXT_PRIMARY), LV_PART_MAIN);
+    lv_color_hex(on ? ctx->accent_color : current_theme().text_primary), LV_PART_MAIN);
 }
 
 inline void climate_info_panel_add_row(lv_obj_t *parent, const std::string &label,
@@ -2022,7 +2022,7 @@ inline void climate_info_panel_add_row(lv_obj_t *parent, const std::string &labe
   lv_label_set_text(row, text.c_str());
   lv_label_set_long_mode(row, LV_LABEL_LONG_WRAP);
   lv_obj_set_width(row, lv_pct(100));
-  lv_obj_set_style_text_color(row, lv_color_hex(DARK_TEXT_PRIMARY), LV_PART_MAIN);
+  lv_obj_set_style_text_color(row, lv_color_hex(current_theme().text_primary), LV_PART_MAIN);
   if (font) lv_obj_set_style_text_font(row, font, LV_PART_MAIN);
 }
 
@@ -2620,7 +2620,8 @@ inline void climate_control_open_modal(ClimateControlCtx *ctx) {
     ESP_LOGD("climate", "No schedule toggle registered for local climate '%s'", ctx->entity_id.c_str());
   } else {
     ui.schedule_btn = control_modal_create_round_button(ui.panel, 32, find_icon("Timer"),
-      ctx->icon_font, DARK_BORDER, SECONDARY_GREY, ctx->width_compensation_percent);
+      ctx->icon_font, theme_display_color(current_theme().border),
+      theme_display_color(current_theme().surface_primary), ctx->width_compensation_percent);
     if (ui.schedule_btn) {
       control_modal_style_chrome_button(ui.schedule_btn, shell.layout, true);
       ui.schedule_icon_lbl = lv_obj_get_child(ui.schedule_btn, 0);
