@@ -5,7 +5,9 @@
 # HA entities instead of custom LVGL pages: espcontrol's own grid exposes them
 # via its Climate/Switch/Sensor card types, configured from the web UI like
 # any other Home Assistant entity. The PID loop's current temperature comes
-# from the board's built-in AHT20 sensor.
+# from heating_control_temperature: the Home Assistant sensor named in the
+# "Heating Room Temperature Entity" setting while its reading is fresh,
+# otherwise the board's built-in AHT20 sensor.
 #
 # The PID gains below are only first-boot defaults (estimated for radiators
 # from a winter of on/off thermostat history: integral time ~6 hours to suit
@@ -18,8 +20,26 @@ substitutions:
   heating_pid_default_kp: "0.43"
   heating_pid_default_ki: "0.00002"
   heating_pid_default_kd: "0"
+  # An external room temperature older than this is ignored in favour of the
+  # built-in sensor, so a lost source can never freeze the PID's input.
+  heating_external_temperature_timeout_ms: "900000"  # 15 minutes
 
 globals:
+  - id: heating_external_temperature_value
+    type: float
+    initial_value: 'NAN'
+  - id: heating_external_temperature_ms
+    type: uint32_t
+    initial_value: '0'
+  - id: heating_using_external_temperature
+    type: bool
+    initial_value: 'false'
+  - id: heating_external_temperature_subscribed_entity
+    type: std::string
+    initial_value: '""'
+  - id: heating_external_temperature_subscribed_generation
+    type: uint32_t
+    initial_value: '0'
   - id: heating_pid_kp
     type: float
     restore_value: true
@@ -32,6 +52,23 @@ globals:
     type: float
     restore_value: true
     initial_value: '${heating_pid_default_kd}'
+
+text:
+  - platform: template
+    name: "Heating Room Temperature Entity"
+    id: heating_external_temperature_entity
+    optimistic: true
+    restore_value: true
+    initial_value: ""
+    min_length: 0
+    max_length: 100
+    mode: text
+    entity_category: config
+    icon: "mdi:home-thermometer"
+    update_interval: never
+    on_value:
+      then:
+        - script.execute: heating_external_temperature_refresh_subscription
 
 api:
   actions:
@@ -61,6 +98,48 @@ api:
               - lambda: 'ESP_LOGW("heating_pid", "Rejected PID parameters kp=%g ki=%g kd=%g: must be finite and >= 0", kp, ki, kd);'
 
 script:
+  # Follows the configured room temperature entity: (re)subscribes when it,
+  # the Home Assistant connection or the subscription generation changes,
+  # and forgets the previous reading so a replaced sensor is never used.
+  - id: heating_external_temperature_refresh_subscription
+    mode: restart
+    then:
+      - lambda: |-
+          const std::string &configured = id(heating_external_temperature_entity).state;
+          const std::string entity = ha_api_state_connected() && configured.rfind("sensor.", 0) == 0
+              ? configured : std::string();
+          const uint32_t generation = entity.empty() ? 0 : ha_subscription_generation();
+          if (entity == id(heating_external_temperature_subscribed_entity) &&
+              generation == id(heating_external_temperature_subscribed_generation)) return;
+          void *const owner = &id(heating_external_temperature_subscribed_entity);
+          ha_release_callbacks_for_owner(owner);
+          if (entity != id(heating_external_temperature_subscribed_entity)) {
+            id(heating_external_temperature_value) = NAN;
+            id(heating_external_temperature_ms) = 0;
+          }
+          id(heating_external_temperature_subscribed_entity) = entity;
+          id(heating_external_temperature_subscribed_generation) = generation;
+          if (entity.empty()) return;
+          {
+            HaCallbackOwnerScope scope(owner);
+            const bool subscribed = ha_subscribe_state(entity,
+              std::function<void(esphome::StringRef)>([entity, generation](esphome::StringRef value) {
+                if (generation != ha_subscription_generation() ||
+                    entity != id(heating_external_temperature_subscribed_entity)) return;
+                auto temperature = parse_number<float>(string_ref_limited(value, 32));
+                if (!temperature.has_value() || std::isnan(*temperature)) return;
+                id(heating_external_temperature_value) = *temperature;
+                id(heating_external_temperature_ms) = millis();
+                id(heating_control_temperature).update();
+              }));
+            if (!subscribed) {
+              id(heating_external_temperature_subscribed_entity).clear();
+              id(heating_external_temperature_subscribed_generation) = 0;
+              return;
+            }
+          }
+          ha_reannounce_state_subscriptions();
+
   # Pushes the stored gains into the running PID loop. The controller keeps
   # its integral already scaled by ki, so changing gains never makes the
   # boiler setpoint jump.
@@ -73,7 +152,34 @@ script:
           kd: !lambda 'return id(heating_pid_kd);'
       - lambda: 'ESP_LOGI("heating_pid", "Applied PID parameters kp=%g ki=%g kd=%g", id(heating_pid_kp), id(heating_pid_ki), id(heating_pid_kd));'
 
+interval:
+  - interval: 10s
+    then:
+      - script.execute: heating_external_temperature_refresh_subscription
+
 sensor:
+  - platform: template
+    id: heating_control_temperature
+    name: "Heating Control Temperature"
+    internal: true
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: |-
+      const uint32_t timeout_ms = ${heating_external_temperature_timeout_ms};
+      bool external_fresh = !std::isnan(id(heating_external_temperature_value)) &&
+          id(heating_external_temperature_ms) != 0 &&
+          millis() - id(heating_external_temperature_ms) < timeout_ms;
+      if (external_fresh != id(heating_using_external_temperature)) {
+        id(heating_using_external_temperature) = external_fresh;
+        if (external_fresh) {
+          ESP_LOGI("heating_temp", "Using external room temperature");
+        } else {
+          ESP_LOGW("heating_temp", "External room temperature unavailable; using built-in sensor");
+        }
+      }
+      return external_fresh ? id(heating_external_temperature_value) : id(builtin_sensor).state;
+
   - platform: aht10
     variant: AHT20
     temperature:
@@ -245,7 +351,7 @@ climate:
     name: "Heating Climate"
     heat_output: ch_setpoint
     default_target_temperature: 23
-    sensor: builtin_sensor
+    sensor: heating_control_temperature
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -306,6 +412,8 @@ esphome:
               rows.push_back({"PID Kp", fmt(id(heating_pid_kp), 3)});
               rows.push_back({"PID Ki", fmt(id(heating_pid_ki), 6)});
               rows.push_back({"PID Kd", fmt(id(heating_pid_kd), 3)});
+              rows.push_back({"Temp Source", id(heating_using_external_temperature) ? "External" : "Built-in"});
+              rows.push_back({"Built-in Temp", fmt(id(builtin_sensor).state, 1)});
             });
     # Runs after globals have restored their saved values, so the PID loop
     # picks up the gains last set from Home Assistant instead of the defaults.
