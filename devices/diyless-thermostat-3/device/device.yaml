@@ -21,7 +21,7 @@ esp32:
   flash_size: 8MB
   # Two full-size OTA app slots do not fit an 8MB chip at this firmware's
   # compiled size (see partitions_8mb_single_app.csv); updates are USB-only.
-  partitions: ../../common/device/partitions_8mb_single_app.csv
+  partitions: ../../../common/device/partitions_8mb_single_app.csv
   framework:
     type: esp-idf
     sdkconfig_options:
