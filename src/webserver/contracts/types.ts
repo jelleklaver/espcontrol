@@ -245,6 +245,7 @@ export interface DeviceProfile {
       deviceFontPackageKey?: string;
       networkCoprocessor?: boolean;
       ethernetSelectable?: boolean;
+      firmwareUpdateDisabled?: boolean;
       improvSerial?: boolean;
       backlightPwmFrequency?: {
         wifi: string;

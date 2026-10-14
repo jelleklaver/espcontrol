@@ -483,7 +483,7 @@ script:
               id(cover_art_process_cached_artwork).execute();
             }
             if (id(espcontrol_app).display().target_mode_is(espcontrol::DisplayMode::CAMERA)) {
-              id(camera_screensaver_downloaded_image)->cancel_update();
+              id(camera_screensaver_cancel_image_update).execute();
               id(camera_screensaver_request_image).execute();
             }
           }

@@ -32,6 +32,12 @@ constexpr uint8_t IMAGE_CARD_STARTUP_DOWNLOAD_RETRIES = 10;
 #ifndef ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS
 #define ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS 6
 #endif
+#if ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS == 0
+// Zero-capacity devices offer no image cards but still compile this runtime;
+// one unused context keeps its fixed-size tables valid.
+#undef ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS
+#define ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS 1
+#endif
 constexpr int IMAGE_CARD_MAX_CONTEXTS = ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS;
 static_assert(IMAGE_CARD_MAX_CONTEXTS > 0,
               "ESPCONTROL_IMAGE_CARD_MAX_CONTEXTS must be positive");

@@ -123,6 +123,7 @@ CANONICAL_PACKAGE_KEYS = (
     "touchscreenPackage",
     "networkCoprocessor",
     "esp32C6FirmwareUpdate",
+    "firmwareUpdateDisabled",
     "ethernetSelectable",
     "extraPackages",
     "backlightPwmFrequency",
@@ -678,6 +679,7 @@ def validate_package(slug: str, device: dict[str, Any], errors: list[str]) -> No
         "apiNavigateAction",
         "apiOpenModalAction",
         "esp32C6FirmwareUpdate",
+        "firmwareUpdateDisabled",
     ):
         if key in package and not isinstance(package[key], bool):
             errors.append(device_error(slug, f"firmware.package.{key} must be true or false when set"))

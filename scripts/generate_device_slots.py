@@ -117,9 +117,13 @@ def package_file_text(device: dict) -> str:
         if package.get("ethernetSelectable")
         else "../../common/device/screen_wifi_setup.yaml"
     )
-    firmware_update_suffix = (
-        "${firmware_update_package_suffix}" if package.get("ethernetSelectable") else ""
-    )
+    # Boards without room for OTA app slots ship USB-only firmware updates.
+    if package.get("firmwareUpdateDisabled"):
+        firmware_update_suffix = "_disabled"
+    elif package.get("ethernetSelectable"):
+        firmware_update_suffix = "${firmware_update_package_suffix}"
+    else:
+        firmware_update_suffix = ""
     esp32_c6_firmware_update_suffix = (
         "${esp32_c6_firmware_update_package_suffix}"
         if package.get("ethernetSelectable")

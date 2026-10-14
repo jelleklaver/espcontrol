@@ -2,12 +2,21 @@
 # These no-op effects keep the common display-mode orchestrator uniform while
 # legacy imported Camera selections are converted to Display Off in display.yaml.
 
+globals:
+  - id: camera_screensaver_transition_generation
+    type: uint32_t
+    initial_value: '0'
+
 script:
   - id: camera_screensaver_text_refresh
     mode: restart
     then: []
 
   - id: camera_screensaver_config_changed
+    mode: restart
+    then: []
+
+  - id: camera_screensaver_cancel_image_update
     mode: restart
     then: []
 

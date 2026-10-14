@@ -191,6 +191,13 @@ script:
           then:
             - script.execute: camera_screensaver_request_image
 
+  # Shared display/cover-art code cancels through this script so builds
+  # without the camera screensaver can provide a no-op instead.
+  - id: camera_screensaver_cancel_image_update
+    mode: restart
+    then:
+      - lambda: 'id(camera_screensaver_downloaded_image)->cancel_update();'
+
   - id: camera_screensaver_request_image
     mode: restart
     then:
