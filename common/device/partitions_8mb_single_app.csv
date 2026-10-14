@@ -4,6 +4,10 @@
 # OTA app slots do not fit an 8 MB chip at this firmware's compiled size, so
 # this board takes the whole app budget as one factory partition and updates
 # over USB instead of wirelessly.
-nvs,           data, nvs,     0x9000,    0xd000,
-phy_init,      data, phy,     0x16000,   0x1000,
-factory,       app,  factory, 0x20000,   0x7d0000,
+#
+# NVS sits after the app on purpose: a USB install writes the factory image
+# from 0x0, which pads every gap up to the end of the app with 0xFF. With NVS
+# in front of the app, each update would erase all saved settings.
+phy_init,      data, phy,     0x9000,    0x1000,
+factory,       app,  factory, 0x10000,   0x7c0000,
+nvs,           data, nvs,     0x7d0000,  0x30000,
