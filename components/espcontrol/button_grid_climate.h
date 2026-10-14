@@ -1982,6 +1982,7 @@ inline void register_climate_schedule_toggle(
     std::function<bool()> is_on,
     std::function<void(bool)> set_on) {
   if (climate_id.empty()) return;
+  ESP_LOGD("climate", "Registered schedule toggle for local climate '%s'", climate_id.c_str());
   ClimateScheduleToggle toggle;
   toggle.climate_id = climate_id;
   toggle.is_on = std::move(is_on);
@@ -2612,7 +2613,12 @@ inline void climate_control_open_modal(ClimateControlCtx *ctx) {
     ui.tab_row, find_icon("Information Outline"), ctx->icon_font,
     ClimateControlTab::INFO);
 
-  if (ctx->is_local && find_climate_schedule_toggle(ctx->entity_id)) {
+  if (!ctx->is_local) {
+    // HA-bound cards get no header toggle - only a local climate can have a
+    // device-side schedule to flip.
+  } else if (find_climate_schedule_toggle(ctx->entity_id) == nullptr) {
+    ESP_LOGD("climate", "No schedule toggle registered for local climate '%s'", ctx->entity_id.c_str());
+  } else {
     ui.schedule_btn = control_modal_create_round_button(ui.panel, 32, find_icon("Timer"),
       ctx->icon_font, DARK_BORDER, SECONDARY_GREY, ctx->width_compensation_percent);
     if (ui.schedule_btn) {
