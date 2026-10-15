@@ -262,9 +262,9 @@ script:
           int minute_of_day = now.hour * 60 + now.minute;
           auto &state = heating_schedule_state();
           const float room_c = id(ch_climate).current_temperature;
-          // Weather entities update hourly; ignore readings older than 3 hours.
-          const auto &outdoor = id(heating_outdoor_temperature_source);
-          const float outdoor_c = ha_temperature_fresh(outdoor, 3 * 60 * 60 * 1000) ? outdoor.value : NAN;
+          // No age limit: outdoor temperature can stay unchanged for hours,
+          // and a stale value only shifts a warm-up's start slightly.
+          const float outdoor_c = id(heating_outdoor_temperature_source).value;
           ActivePeriod active = select_scheduled_period(state.days, weekday, minute_of_day,
                                                         room_c, outdoor_c, id(heating_warmup_rate).state);
           if (!active.valid) return;

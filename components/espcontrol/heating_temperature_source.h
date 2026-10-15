@@ -5,7 +5,10 @@
 
 // Internal implementation detail for button_grid.h. Include button_grid.h from device YAML.
 
-// Live reading of one configured Home Assistant temperature entity.
+// Live reading of one configured Home Assistant temperature entity. Home
+// Assistant only pushes changes, so `updated_ms` is the time of the last
+// change, not of the last report: a stable temperature can stay quiet for a
+// long time. `value` is NAN while the entity is unavailable or unknown.
 struct HaTemperatureSource {
   std::string subscribed_entity;
   uint32_t subscribed_generation = 0;
@@ -22,8 +25,9 @@ inline bool ha_temperature_fresh(const HaTemperatureSource &source, uint32_t max
 // (Re)subscribes `source` to `configured` when it, the Home Assistant
 // connection or the subscription generation changed. Entities outside the
 // sensor and weather domains are ignored. A replaced entity's last reading
-// is forgotten so it can never be mistaken for the new one; `on_update`
-// runs after every accepted reading.
+// is forgotten so it can never be mistaken for the new one. A non-numeric
+// state (unavailable, unknown) clears the reading. `on_update` runs after
+// every change of reading.
 inline void refresh_ha_temperature_source(HaTemperatureSource &source,
                                           const std::string &configured,
                                           std::function<void()> on_update) {
@@ -50,9 +54,9 @@ inline void refresh_ha_temperature_source(HaTemperatureSource &source,
               if (generation != ha_subscription_generation() ||
                   entity != source.subscribed_entity) return;
               float reading = NAN;
-              if (!parse_float_ref(state, reading) || std::isnan(reading)) return;
+              if (!parse_float_ref(state, reading)) reading = NAN;
               source.value = reading;
-              source.updated_ms = esphome::millis();
+              source.updated_ms = std::isnan(reading) ? 0 : esphome::millis();
               if (on_update) on_update();
             }));
     if (!subscribed) {

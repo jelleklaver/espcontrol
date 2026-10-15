@@ -6,8 +6,8 @@
 # via its Climate/Switch/Sensor card types, configured from the web UI like
 # any other Home Assistant entity. The PID loop's current temperature comes
 # from heating_control_temperature: the Home Assistant sensor named in the
-# "Heating Room Temperature Entity" setting while its reading is fresh,
-# otherwise the board's built-in AHT20 sensor.
+# "Heating Room Temperature Entity" setting while it is available, otherwise
+# the board's built-in AHT20 sensor.
 #
 # The PID gains below are only first-boot defaults (estimated for radiators
 # from a winter of on/off thermostat history: integral time ~6 hours to suit
@@ -20,9 +20,11 @@ substitutions:
   heating_pid_default_kp: "0.43"
   heating_pid_default_ki: "0.00002"
   heating_pid_default_kd: "0"
-  # An external room temperature older than this is ignored in favour of the
-  # built-in sensor, so a lost source can never freeze the PID's input.
-  heating_external_temperature_timeout_ms: "900000"  # 15 minutes
+  # The room sensor is used until Home Assistant reports it unavailable or
+  # the connection drops. Many sensors only report changes, so a stable room
+  # can stay quiet for a long time; this limit only guards against a dead
+  # sensor whose last value Home Assistant keeps showing.
+  heating_external_temperature_timeout_ms: "10800000"  # 3 hours
 
 globals:
   - id: heating_room_temperature_source
