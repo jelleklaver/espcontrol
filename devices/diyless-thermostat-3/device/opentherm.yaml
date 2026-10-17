@@ -322,10 +322,17 @@ climate:
       ki: ${heating_pid_default_ki}
       kd: ${heating_pid_default_kd}
       output_averaging_samples: 10
+      # Heating-only: the integral is the house's baseline heat demand, which
+      # cannot be negative. Without this floor a warm night setback winds it
+      # down to -1, and the next warm-up must first undo that for hours.
+      min_integral: 0
+    # Near the target only the integral is slowed, to ignore 0.1 C sensor
+    # wobble; the proportional term stays fully active (kp_multiplier 1), so
+    # even a small shortfall asks for some heat.
     deadband_parameters:
-      threshold_high: 0.5
-      threshold_low: -0.5
-      kp_multiplier: 0
+      threshold_high: 0.2
+      threshold_low: -0.2
+      kp_multiplier: 1
       ki_multiplier: 0.15
       kd_multiplier: 0.0
       deadband_output_averaging_samples: 15
